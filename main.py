@@ -103,7 +103,8 @@ class Model(object):
             if val_loss < self.best_loss:
                 self.best_model = self.model.state_dict()
                 self.best_loss = val_loss
-        torch.save(self.best_model, "models/{}/{}.pth".format(self.args.name, self.args.arch))
+        model_state_dict = self.model.state_dict()
+        torch.save(model_state_dict, "models/{}/{}.pth".format(self.args.name, self.args.arch))
         return loss
 
 
