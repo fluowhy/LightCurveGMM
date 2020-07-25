@@ -146,7 +146,7 @@ def plot_loss(loss, savename, dpi=200):
     ax[3].plot(epochs, loss[:, 0, 3], color="navy", label="train")
     ax[3].plot(epochs, loss[:, 1, 3], color="red", label="val")
     ax[3].set_ylabel("gmm energy")
-    ax[3].set_xlabel("epochs")
+    ax[3].set_xlabel("epoch")
     ax[3].legend()
     ax[3].grid()
     
