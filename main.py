@@ -4,7 +4,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from models import *
 from utils import *
-from datasets import LightCurveDataset
+from datasets import LightCurveDataset, ASASSNDataset
 
 
 class Model(object):
@@ -124,7 +124,7 @@ if __name__ == "__main__":
     parser.add_argument("--alpha", type=float, default=1., help="cross entropy weight (default 1)")
     parser.add_argument("--beta", type=float, default=1., help="gmm energy weight (default 1)")
     parser.add_argument("--arch", type=str, default="gru", choices=["gru", "lstm"], help="rnn architecture (default gru)")
-    parser.add_argument("--name", type=str, default="linear", choices=["linear", "macho", "asas"], help="dataset name (default linear)")
+    parser.add_argument("--name", type=str, default="linear", choices=["linear", "macho", "asas", "asas_sn"], help="dataset name (default linear)")
     parser.add_argument("--fold", action="store_true", help="folded light curves")
     args = parser.parse_args()
     print(args)
@@ -137,7 +137,10 @@ if __name__ == "__main__":
 
     seed_everything()
 
-    dataset = LightCurveDataset(args.name, fold=args.fold, bs=args.bs, device=args.d, eval=True)  
+    if args.name == "asas_sn":
+        dataset = ASASSNDataset(fold=args.fold, bs=args.bs, device=args.d, eval=True)
+    else:
+        dataset = LightCurveDataset(args.name, fold=args.fold, bs=args.bs, device=args.d, eval=True)  
     args.nin = dataset.x_train.shape[2]
     args.ngmm = len(np.unique(dataset.y_train))
 

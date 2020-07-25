@@ -56,7 +56,7 @@ def compute_energy(z, phi=None, mu=None, cov=None, logits=None):
     eps = 1e-12
     cte = D * np.log(2 * np.pi)
     eye = (torch.eye(D, device=cov.device) * eps).unsqueeze(0)
-    eye = eye.repeat(5, 1, 1)
+    eye = eye.repeat(k, 1, 1)
     cov = cov + eye
     cov_inverse = torch.inverse(cov)
     det_cov = 0.5 * (cte + torch.logdet(cov)).exp()
@@ -64,7 +64,7 @@ def compute_energy(z, phi=None, mu=None, cov=None, logits=None):
     det_cov += eps
 
     # N x K
-    exp_term_tmp = -0.5 * torch.sum(torch.sum(z_mu.unsqueeze(-1) * cov_inverse.unsqueeze(0), dim=-2) * z_mu, dim=-1)
+    exp_term_tmp = - 0.5 * torch.sum(torch.sum(z_mu.unsqueeze(-1) * cov_inverse.unsqueeze(0), dim=-2) * z_mu, dim=-1)
     # for stability (logsumexp)
     max_val = torch.max((exp_term_tmp).clamp(min=0), dim=1, keepdim=True)[0]
 
