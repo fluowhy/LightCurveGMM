@@ -60,7 +60,7 @@ def compute_energy(z, phi=None, mu=None, cov=None, logits=None):
     cov = cov + eye
     cov_inverse = torch.inverse(cov)
     det_cov = 0.5 * (cte + torch.logdet(cov)).exp()
-    det_cov[torch.isnan(det_cov)] = 1e10
+    det_cov[torch.isnan(det_cov)] = 0
     det_cov += eps
 
     # N x K
