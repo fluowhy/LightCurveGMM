@@ -11,9 +11,9 @@ class Model(object):
     def __init__(self, args):
         self.args = args
         if args.arch == "gru":
-            self.model = GRUGMM(args.nin, args.nh, args.nl, args.ne, args.ngmm, args.nout, args.nlayers, args.do)
+            self.model = GRUGMM(args.nin, args.nh, args.nl, args.ne, args.ngmm, args.nout, args.nlayers, args.do, args.fold)
         elif args.arch == "lstm":
-            self.model = LSTMGMM(args.nin, args.nh, args.nl, args.nout, args.nlayers, args.do)        
+            self.model = LSTMGMM(args.nin, args.nh, args.nl, args.nout, args.nlayers, args.do, args.fold)        
         self.model.to(args.d)
         print("model params {}".format(count_parameters(self.model)))
         log_path = "logs/autoencoder"
@@ -31,10 +31,14 @@ class Model(object):
         ce_loss = 0
         for idx, batch in tqdm(enumerate(data_loader)):
             self.optimizer.zero_grad()
-            x, y, m, s, seq_len = batch
+            if self.args.fold:
+                x, y, m, s, p, seq_len = batch
+            else:
+                x, y, m, s, seq_len = batch
+                p = None
             # x = x.to(self.args.d)
             # seq_len = seq_len.to(self.args.d)            
-            x_pred, h, logits = self.model(x, m, s, seq_len.long())
+            x_pred, h, logits = self.model(x, m, s, seq_len.long(), p)
             recon_loss = self.wmse(x, x_pred, seq_len).mean()
             ce_loss = self.ce(logits, y)
             loss = recon_loss + self.args.alpha * ce_loss
@@ -56,10 +60,14 @@ class Model(object):
         ce_loss = 0
         with torch.no_grad():
             for idx, batch in tqdm(enumerate(data_loader)):
-                x, y, m, s, seq_len = batch
+                if self.args.fold:
+                    x, y, m, s, p, seq_len = batch
+                else:
+                    x, y, m, s, seq_len = batch
+                    p = None
                 # x = x.to(self.args.d)
                 # seq_len = seq_len.to(self.args.d)
-                x_pred, h, logits = self.model(x, m, s, seq_len.long())
+                x_pred, h, logits = self.model(x, m, s, seq_len.long(), p)
                 recon_loss = self.wmse(x, x_pred, seq_len).mean()
                 ce_loss = self.ce(logits, y)
                 loss = recon_loss + self.args.alpha * ce_loss
@@ -107,6 +115,7 @@ if __name__ == "__main__":
     parser.add_argument("--alpha", type=float, default=1., help="cross entropy weight (default 1)")
     parser.add_argument("--arch", type=str, default="gru", choices=["gru", "lstm"], help="rnn architecture (default gru)")
     parser.add_argument("--name", type=str, default="linear", choices=["linear", "macho", "asas"], help="dataset name (default linear)")
+    parser.add_argument("--fold", action="store_true", help="folded light curves")
     args = parser.parse_args()
     print(args)
 
@@ -118,7 +127,7 @@ if __name__ == "__main__":
 
     seed_everything()
 
-    dataset = LightCurveDataset(args.name, fold=True, bs=args.bs, device=args.d, eval=True)  
+    dataset = LightCurveDataset(args.name, fold=args.fold, bs=args.bs, device=args.d, eval=True)  
     args.nin = dataset.x_train.shape[2]
     args.ngmm = len(np.unique(dataset.y_train))
 

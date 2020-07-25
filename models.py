@@ -46,7 +46,7 @@ class LSTMAE(torch.nn.Module):
 
 
 class GRUGMM(torch.nn.Module):
-    def __init__(self, nin, nh, nl, ne, ngmm, nout, nlayers, do):
+    def __init__(self, nin, nh, nl, ne, ngmm, nout, nlayers, do, fold):
         super(GRUGMM, self).__init__()
         self.nh = nh
         self.nl = nl
@@ -58,7 +58,7 @@ class GRUGMM(torch.nn.Module):
             self.dec = torch.nn.GRU(input_size=nl + 1, hidden_size=nh, num_layers=nlayers, batch_first=True)
 
         self.estimation_network = torch.nn.Sequential(
-            torch.nn.Linear(nl + 4, ne),  # + 5
+            torch.nn.Linear(nl + 5, ne) if fold else torch.nn.Linear(nl + 4, ne),
             torch.nn.Tanh(),
             torch.nn.Dropout(p=do),
             torch.nn.Linear(ne, ngmm)

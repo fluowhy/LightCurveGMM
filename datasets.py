@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 import pdb
 
-from utils import make_dir, save_json, MyDataset
+from utils import make_dir, save_json, MyDataset, MyFoldedDataset
 
 
 def phase_fold(x, p, seq_len):
@@ -157,8 +157,12 @@ class LightCurveDataset(object):
         return
 
     def define_datasets(self):
-        self.train_dataset = MyDataset(self.x_train, self.y_train, self.m_train, self.s_train, self.seq_len_train, device=self.device)
-        self.val_dataset = MyDataset(self.x_val, self.y_val, self.m_val, self.s_val, self.seq_len_val, device=self.device)
+        if self.fold:            
+            self.train_dataset = MyFoldedDataset(self.x_train, self.y_train, self.m_train, self.s_train, self.p_train, self.seq_len_train, device=self.device)
+            self.val_dataset = MyFoldedDataset(self.x_val, self.y_val, self.m_val, self.s_val, self.p_val, self.seq_len_val, device=self.device)
+        else:
+            self.train_dataset = MyDataset(self.x_train, self.y_train, self.m_train, self.s_train, self.seq_len_train, device=self.device)
+            self.val_dataset = MyDataset(self.x_val, self.y_val, self.m_val, self.s_val, self.seq_len_val, device=self.device)
         self.train_dataloader = DataLoader(self.train_dataset, batch_size=self.bs, shuffle=True)
         self.val_dataloader = DataLoader(self.val_dataset, batch_size=self.bs, shuffle=True)
         return

@@ -123,6 +123,23 @@ class MyDataset(Dataset):
         return self.n
 
 
+class MyFoldedDataset(Dataset):
+    def __init__(self, x, y, m, s, p, z, device="cpu"):
+        self.n, _, _ = x.shape  # rnn
+        self.x = torch.tensor(x, dtype=torch.float, device=device)
+        self.y = torch.tensor(y, dtype=torch.long, device=device)
+        self.m = torch.tensor(m, dtype=torch.float, device=device)
+        self.s = torch.tensor(s, dtype=torch.float, device=device)
+        self.p = torch.tensor(p, dtype=torch.float, device=device)
+        self.z = torch.tensor(z, dtype=torch.float, device=device)
+
+    def __getitem__(self, index):
+        return self.x[index], self.y[index], self.m[index], self.s[index], self.p[index], self.z[index]
+
+    def __len__(self):
+        return self.n
+
+
 def seed_everything(seed=1234):
     """
     Author: Benjamin Minixhofer
