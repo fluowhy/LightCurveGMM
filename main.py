@@ -29,6 +29,7 @@ class Model(object):
         train_loss = 0
         recon_loss = 0
         ce_loss = 0
+        gmm_loss = 0
         for idx, batch in tqdm(enumerate(data_loader)):
             self.optimizer.zero_grad()
             if self.args.fold:
@@ -38,26 +39,30 @@ class Model(object):
                 p = None
             # x = x.to(self.args.d)
             # seq_len = seq_len.to(self.args.d)            
-            x_pred, h, logits = self.model(x, m, s, seq_len.long(), p)
-            recon_loss = self.wmse(x, x_pred, seq_len).mean()
-            ce_loss = self.ce(logits, y)
-            loss = recon_loss + self.args.alpha * ce_loss
+            x_pred, h, logits, phi, mu, cov = self.model(x, m, s, seq_len.long(), p)
+            recon = self.wmse(x, x_pred, seq_len).mean()
+            ce = self.ce(logits, y)
+            energy = compute_energy(h, phi, mu, cov).mean()
+            loss = recon + self.args.alpha * ce + self.args.beta * energy
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), clip_value)
             self.optimizer.step()
             train_loss += loss.item()
-            recon_loss += recon_loss.item()
-            ce_loss += ce_loss.item()
+            recon_loss += recon.item()
+            ce_loss += ce.item()
+            gmm_loss += energy.item()
         train_loss /= (idx + 1)
         recon_loss /= (idx + 1)
         ce_loss /= (idx + 1)
-        return train_loss, recon_loss, ce_loss
+        gmm_loss /= (idx + 1)
+        return train_loss, recon_loss, ce_loss, gmm_loss
 
     def eval_model(self, data_loader):
         self.model.eval()
         eval_loss = 0
         recon_loss = 0
         ce_loss = 0
+        gmm_loss = 0
         with torch.no_grad():
             for idx, batch in tqdm(enumerate(data_loader)):
                 if self.args.fold:
@@ -67,27 +72,30 @@ class Model(object):
                     p = None
                 # x = x.to(self.args.d)
                 # seq_len = seq_len.to(self.args.d)
-                x_pred, h, logits = self.model(x, m, s, seq_len.long(), p)
-                recon_loss = self.wmse(x, x_pred, seq_len).mean()
-                ce_loss = self.ce(logits, y)
-                loss = recon_loss + self.args.alpha * ce_loss
+                x_pred, h, logits, phi, mu, cov = self.model(x, m, s, seq_len.long(), p)
+                recon = self.wmse(x, x_pred, seq_len).mean()
+                ce = self.ce(logits, y)
+                energy = compute_energy(h, phi, mu, cov).mean()
+                loss = recon + self.args.alpha * ce + self.args.beta * energy
                 eval_loss += loss.item()
-                recon_loss += recon_loss.item()
-            ce_loss += ce_loss.item()
+                recon_loss += recon.item()
+                ce_loss += ce.item()
+                gmm_loss += energy.item()
         eval_loss /= (idx + 1)
         recon_loss /= (idx + 1)
         ce_loss /= (idx + 1)
-        return eval_loss, recon_loss, ce_loss
+        gmm_loss /= (idx + 1)
+        return eval_loss, recon_loss, ce_loss, gmm_loss
 
     def fit(self, train_loader, val_loader, args):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=args.lr, weight_decay=args.wd, amsgrad=True)
-        loss = np.zeros((args.e, 2, 3))
+        loss = np.zeros((args.e, 2, 4))
         for epoch in range(args.e):
             template = "Epoch {} train loss {:.4f} val loss {:.4f}"
-            train_loss, train_recon_loss, train_ce_loss = self.train_model(train_loader)
-            val_loss, val_recon_loss, val_ce_loss = self.eval_model(val_loader)
-            loss[epoch, 0] = (train_loss, train_recon_loss, train_ce_loss)
-            loss[epoch, 1] = (val_loss, val_recon_loss, val_ce_loss)
+            train_loss, train_recon_loss, train_ce_loss, train_gmm_loss = self.train_model(train_loader)
+            val_loss, val_recon_loss, val_ce_loss, val_gmm_loss = self.eval_model(val_loader)
+            loss[epoch, 0] = (train_loss, train_recon_loss, train_ce_loss, train_gmm_loss)
+            loss[epoch, 1] = (val_loss, val_recon_loss, val_ce_loss, val_gmm_loss)
             self.writer.add_scalars("total", {"train": train_loss, "val": val_loss}, global_step=epoch)
             self.writer.add_scalars("recon", {"train": train_recon_loss, "val": val_recon_loss}, global_step=epoch)
             self.writer.add_scalars("cross_entropy", {"train": train_ce_loss, "val": val_ce_loss}, global_step=epoch)
@@ -113,6 +121,7 @@ if __name__ == "__main__":
     parser.add_argument("--do", type=float, default=0., help="dropout value (default 0)")
     parser.add_argument("--wd", type=float, default=0., help="L2 reg value (default 0)")
     parser.add_argument("--alpha", type=float, default=1., help="cross entropy weight (default 1)")
+    parser.add_argument("--beta", type=float, default=1., help="gmm energy weight (default 1)")
     parser.add_argument("--arch", type=str, default="gru", choices=["gru", "lstm"], help="rnn architecture (default gru)")
     parser.add_argument("--name", type=str, default="linear", choices=["linear", "macho", "asas"], help="dataset name (default linear)")
     parser.add_argument("--fold", action="store_true", help="folded light curves")
@@ -133,4 +142,4 @@ if __name__ == "__main__":
 
     aegmm = Model(args)
     loss = aegmm.fit(dataset.train_dataloader, dataset.val_dataloader, args)
-    plot_loss(loss, "figures/{}/{}_loss.png".format(args.name, args.arch))
+    plot_loss(loss, "figures/{}/{}_loss.png".format(args.name, args.arch), dpi=400)

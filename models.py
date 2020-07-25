@@ -1,7 +1,7 @@
 import torch
 import pdb
 
-from utils import distances
+from utils import distances, compute_params
 
 
 class LSTMAE(torch.nn.Module):
@@ -79,7 +79,8 @@ class GRUGMM(torch.nn.Module):
         else:
             zc = torch.cat((z, euc, cos, m.unsqueeze(-1), s.unsqueeze(-1), p.unsqueeze(-1)), dim=1) 
         logits = self.estimation_network(zc)
-        return pred, z, logits
+        phi, mu, cov = compute_params(zc, logits)
+        return pred, zc, logits, phi, mu, cov
 
     def encode(self, x):
         # input (batch, seq_len, input_size)

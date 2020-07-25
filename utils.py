@@ -9,6 +9,77 @@ import matplotlib.pyplot as plt
 import pdb
 
 
+def compute_params(z, logits):
+    # source https://github.com/danieltan07/dagmm/blob/master/model.py
+    softmax = torch.nn.Softmax(dim=1)
+    gamma = softmax(logits)
+
+    N = gamma.size(0)
+    # K
+    sum_gamma = torch.sum(gamma, dim=0)
+
+    # K
+    phi = sum_gamma / N
+
+    # K x D
+    mu = torch.sum(gamma.unsqueeze(-1) * z.unsqueeze(1), dim=0) / sum_gamma.unsqueeze(-1)
+    mu = mu.data
+    # z = N x D
+    # mu = K x D
+    # gamma N x K
+
+    # z_mu = N x K x D
+    z_mu = (z.unsqueeze(1)- mu.unsqueeze(0))
+
+    # z_mu_outer = N x K x D x D
+    z_mu_outer = z_mu.unsqueeze(-1) * z_mu.unsqueeze(-2)
+
+    # K x D x D
+    cov = torch.sum(gamma.unsqueeze(-1).unsqueeze(-1) * z_mu_outer, dim = 0) / sum_gamma.unsqueeze(-1).unsqueeze(-1)
+    cov = cov.data
+
+    return phi, mu, cov
+
+
+def compute_energy(z, phi=None, mu=None, cov=None, logits=None):
+    # source https://github.com/danieltan07/dagmm/blob/master/model.py
+    if phi is None or mu is None or cov is None:
+        phi, mu, cov = compute_params(z, logits)
+
+    k, D, _ = cov.size()
+
+    z_mu = (z.unsqueeze(1)- mu.unsqueeze(0))
+
+    cov_inverse = []
+    det_cov = []
+    cov_diag = 0
+    eps = 1e-12
+    cte = D * np.log(2 * np.pi)
+    eye = (torch.eye(D, device=cov.device) * eps).unsqueeze(0)
+    eye = eye.repeat(5, 1, 1)
+    cov = cov + eye
+    cov_inverse = torch.inverse(cov)
+    det_cov = 0.5 * (cte + torch.logdet(cov)).exp()
+    det_cov[torch.isnan(det_cov)] = 0
+    det_cov += eps
+
+    # N x K
+    exp_term_tmp = -0.5 * torch.sum(torch.sum(z_mu.unsqueeze(-1) * cov_inverse.unsqueeze(0), dim=-2) * z_mu, dim=-1)
+    # for stability (logsumexp)
+    max_val = torch.max((exp_term_tmp).clamp(min=0), dim=1, keepdim=True)[0]
+
+    exp_term = torch.exp(exp_term_tmp - max_val)
+
+    # sample_energy = -max_val.squeeze() - torch.log(torch.sum(phi.unsqueeze(0) * exp_term / (det_cov).unsqueeze(0), dim = 1) + eps)
+    sample_energy = - max_val.squeeze() - torch.log(torch.sum(phi.unsqueeze(0) * exp_term / (torch.sqrt(det_cov)).unsqueeze(0), dim = 1) + eps)
+    # sample_energy = -max_val.squeeze() - torch.log(torch.sum(phi.unsqueeze(0) * exp_term / (torch.sqrt((2*np.pi)**D * det_cov)).unsqueeze(0), dim = 1) + eps)
+    
+    if torch.isnan(sample_energy.mean()):
+        pdb.set_trace()
+
+    return sample_energy
+
+
 def distances(x, x_pred):
     mask = (x[:, :, 2] != 0) * 1.
     x = x[:, :, 1]
@@ -52,7 +123,7 @@ def plot_confusion_matrix(cm, labels, title, savename, normalize=False, dpi=200)
 
 def plot_loss(loss, savename, dpi=200):
     epochs = np.arange(len(loss))
-    fig, ax = plt.subplots(3, 1)
+    fig, ax = plt.subplots(4, 1, figsize=(20, 10))
 
     ax[0].plot(epochs, loss[:, 0, 0], color="navy", label="train")
     ax[0].plot(epochs, loss[:, 1, 0], color="red", label="val")
@@ -69,9 +140,15 @@ def plot_loss(loss, savename, dpi=200):
     ax[2].plot(epochs, loss[:, 0, 2], color="navy", label="train")
     ax[2].plot(epochs, loss[:, 1, 2], color="red", label="val")
     ax[2].set_ylabel("cross entropy")
-    ax[2].set_xlabel("epochs")
     ax[2].legend()
     ax[2].grid()
+
+    ax[3].plot(epochs, loss[:, 0, 3], color="navy", label="train")
+    ax[3].plot(epochs, loss[:, 1, 3], color="red", label="val")
+    ax[3].set_ylabel("gmm energy")
+    ax[3].set_xlabel("epochs")
+    ax[3].legend()
+    ax[3].grid()
     
     plt.tight_layout()
     plt.savefig(savename, dpi=dpi)
