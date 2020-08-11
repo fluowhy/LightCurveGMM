@@ -73,6 +73,7 @@ def compute_energy(z, phi=None, mu=None, cov=None, logits=None):
     arg = torch.sum(phi.unsqueeze(0) * exp_term, dim=1)
     # sample_energy = - max_val.squeeze() - torch.log(arg + eps)
     sample_energy = 1 / (arg + eps)
+    sample_energy = sample_energy.clamp(max=1e3)
     # sample_energy = - torch.log(arg + eps)
     
     if torch.isnan(sample_energy.mean()):
