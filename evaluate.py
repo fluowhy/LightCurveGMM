@@ -102,7 +102,7 @@ class Args:
     ngmm = 3
     nin = 2
     nh = 96
-    nl = 8
+    nl = 16
     ne = 16
     nout = 1
     nlayers = 2
