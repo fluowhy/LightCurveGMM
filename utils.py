@@ -23,7 +23,6 @@ def compute_params(z, logits):
 
     # K x D
     mu = torch.sum(gamma.unsqueeze(-1) * z.unsqueeze(1), dim=0) / sum_gamma.unsqueeze(-1)
-    mu = mu.data
     # z = N x D
     # mu = K x D
     # gamma N x K
@@ -36,7 +35,6 @@ def compute_params(z, logits):
 
     # K x D x D
     cov = torch.sum(gamma.unsqueeze(-1).unsqueeze(-1) * z_mu_outer, dim = 0) / sum_gamma.unsqueeze(-1).unsqueeze(-1)
-    cov = cov.data
 
     return phi, mu, cov
 
@@ -59,20 +57,24 @@ def compute_energy(z, phi=None, mu=None, cov=None, logits=None):
     eye = eye.repeat(k, 1, 1)
     cov = cov + eye
     cov_inverse = torch.inverse(cov)
-    det_cov = 0.5 * (cte + torch.logdet(cov)).exp()
-    det_cov[torch.isnan(det_cov)] = 0
-    det_cov += eps
+    det_cov = (0.5 * (cte + torch.logdet(cov))).exp()
+    # det_cov = 0.5 * torch.logdet(cov)
 
     # N x K
     exp_term_tmp = - 0.5 * torch.sum(torch.sum(z_mu.unsqueeze(-1) * cov_inverse.unsqueeze(0), dim=-2) * z_mu, dim=-1)
+    log_norm_prob_dens = exp_term_tmp - det_cov.unsqueeze(0)
     # for stability (logsumexp)
-    max_val = torch.max((exp_term_tmp).clamp(min=0), dim=1, keepdim=True)[0]
+    # max_val = torch.max((exp_term_tmp).clamp(min=0), dim=1, keepdim=True)[0]
+    # exp_term = torch.exp(exp_term_tmp - max_val)
+    # max_val, _ = exp_term_tmp.clamp(min=0).max(dim=1, keepdim=True)
+    # exp_term = torch.exp(exp_term_tmp - max_val) / torch.sqrt(det_cov).unsqueeze(0)
+    # pdb.set_trace()
+    exp_term = log_norm_prob_dens.exp()
 
-    exp_term = torch.exp(exp_term_tmp - max_val)
-
-    # sample_energy = -max_val.squeeze() - torch.log(torch.sum(phi.unsqueeze(0) * exp_term / (det_cov).unsqueeze(0), dim = 1) + eps)
-    sample_energy = - max_val.squeeze() - torch.log(torch.sum(phi.unsqueeze(0) * exp_term / (torch.sqrt(det_cov)).unsqueeze(0), dim = 1) + eps)
-    # sample_energy = -max_val.squeeze() - torch.log(torch.sum(phi.unsqueeze(0) * exp_term / (torch.sqrt((2*np.pi)**D * det_cov)).unsqueeze(0), dim = 1) + eps)
+    arg = torch.sum(phi.unsqueeze(0) * exp_term, dim=1)
+    # sample_energy = - max_val.squeeze() - torch.log(arg + eps)
+    # sample_energy = 1 / (arg + eps)
+    sample_energy = - torch.log(arg + eps)
     
     if torch.isnan(sample_energy.mean()):
         pdb.set_trace()
