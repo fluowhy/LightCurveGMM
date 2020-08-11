@@ -48,16 +48,15 @@ def compute_energy(z, phi=None, mu=None, cov=None, logits=None):
 
     z_mu = (z.unsqueeze(1)- mu.unsqueeze(0))
 
-    cov_inverse = []
-    det_cov = []
-    cov_diag = 0
     eps = 1e-12
     cte = D * np.log(2 * np.pi)
     eye = (torch.eye(D, device=cov.device) * eps).unsqueeze(0)
     eye = eye.repeat(k, 1, 1)
     cov = cov + eye
     cov_inverse = torch.inverse(cov)
-    det_cov = (0.5 * (cte + torch.logdet(cov))).exp()
+    det_cov = (0.5 * (cte + torch.logdet(cov)))
+    # if torch.isnan(det_cov.sum()):
+        # det_cov = torch.ones_like(det_cov) * eps
     # det_cov = 0.5 * torch.logdet(cov)
 
     # N x K
@@ -83,7 +82,7 @@ def compute_energy(z, phi=None, mu=None, cov=None, logits=None):
 
 
 def distances(x, x_pred):
-    mask = (x[:, :, 2] != 0) * 1.
+    mask = (x[:, :, 0] != 0) * 1.
     x = x[:, :, 1]
     x_norm = (x.pow(2) * mask).sum(1, keepdim=True)
     x_pred_norm = (x_pred.pow(2) * mask).sum(1, keepdim=True)
@@ -97,7 +96,7 @@ def plot_confusion_matrix(cm, labels, title, savename, normalize=False, dpi=200)
     plt.clf()
     fig, ax = plt.subplots()
     if normalize:
-        cm = cm / cm.sum(1)
+        cm = cm / cm.sum(1)[:, np.newaxis]
         vmax = 1
         my_format = "{:.2f}"
     else:
@@ -175,14 +174,23 @@ def make_dir(directory):
 
 
 class WMSELoss(torch.nn.Module):
-    def __init__(self, eps=1e-10):
+    def __init__(self, eps=1e-10, nc=3):
         super(WMSELoss, self).__init__()
         self.eps = eps
+        self.loss_fun = self.wmse_3c if nc == 3 else self.wmse_2c
 
-    def forward(self, x, x_pred, seq_len):
-        # x_pred -> (mu, logvar)
+    def wmse_3c(self, x, x_pred, seq_len):
         mask = (x[:, :, 2] != 0) * 1.
         wmse = (((x_pred - x[:, :, 1]) / (x[:, :, 2] + self.eps)).pow(2) * mask).sum(dim=- 1) / seq_len
+        return wmse
+
+    def wmse_2c(self, x, x_pred, seq_len):
+        mask = (x[:, :, 0] != 0) * 1.
+        wmse = ((x_pred - x[:, :, 1]).pow(2) * mask).sum(dim=- 1) / seq_len
+        return wmse
+
+    def forward(self, x, x_pred, seq_len):
+        wmse = self.loss_fun(x, x_pred, seq_len)
         return wmse
 
 

@@ -29,8 +29,8 @@ def feature_extraction(dataset, model, device, fold):
     else:
         p_train = None
         p_val = None
-    seq_len_train = (x_train[:, :, 2] != 0).sum(dim=1)
-    seq_len_val = (x_val[:, :, 2] != 0).sum(dim=1)
+    seq_len_train = (x_train[:, :, 0] != 0).sum(dim=1)
+    seq_len_val = (x_val[:, :, 0] != 0).sum(dim=1)
     model.eval()
     with torch.no_grad():
         _, train_features, train_logits, _, _, _ = model(x_train, m_train, s_train, seq_len_train, p_train)
@@ -56,8 +56,8 @@ def feature_extraction_asas_sn(dataset, model, device, fold):
     else:
         p_test = None
         p_val = None
-    seq_len_test = (x_test[:, :, 2] != 0).sum(dim=1)
-    seq_len_val = (x_val[:, :, 2] != 0).sum(dim=1)
+    seq_len_test = (x_test[:, :, 1] != 0).sum(dim=1)
+    seq_len_val = (x_val[:, :, 1] != 0).sum(dim=1)
     model.eval()
     with torch.no_grad():
         _, test_features, test_logits, _, _, _ = model(x_test, m_test, s_test, seq_len_test, p_test)
@@ -93,53 +93,66 @@ def metrics_summary(scores_test, scores_train, y_true, percentile):
 
 seed_everything()
 
-name = "asas_sn"
-bs = 256
-device = "cpu"
+name = "toy"
 arch = "gru"
-nin = 3
-nh = 96
-nl = 16
-ne = 16
-ngmm = 8
-nout = 1
-nlayers = 2
-do = 0.25
-fold = True
+
+class Args:
+    bs = 256
+    d = "cpu"
+    ngmm = 3
+    nin = 2
+    nh = 96
+    nl = 8
+    ne = 16
+    nout = 1
+    nlayers = 2
+    do = 0.5
+    fold = False
+
+args = Args()
 
 if name == "asas_sn":    
-    dataset = ASASSNDataset(fold=fold, bs=bs, device=device, eval=True)
+    dataset = ASASSNDataset(fold=args.fold, bs=args.bs, device=args.d, eval=True)
     lab2idx = load_json("../datasets/asas_sn/lab2idx.json")
     idx2lab = list(lab2idx.keys())
+elif name == "toy":
+    from toy_dataset import ToyDataset
+
+    dataset = ToyDataset(args, val_size=0.1, sl=64)
+    lab2idx = dataset.lab2idx
+    idx2lab = list(lab2idx.keys())
 else:
-    dataset = LightCurveDataset(name, fold=fold, bs=bs, device=device, eval=True)
+    dataset = LightCurveDataset(name, fold=args.fold, bs=args.bs, device=args.d, eval=True)
     lab2idx = load_json("processed_data/{}/lab2idx.json".format(name))
     idx2lab = list(lab2idx.keys())
 
 if arch == "gru":
-    model = GRUGMM(nin, nh, nl, ne, ngmm, nout, nlayers, do, fold)
+    model = GRUGMM(args.nin, args.nh, args.nl, args.ne, args.ngmm, args.nout, args.nlayers, args.do, args.fold)
 elif arch == "lstm":
-    model = LSTMGMM(nin, nh, nl, ne, ngmm, nout, nlayers, do, fold)
+    model = LSTMGMM(args.nin, args.nh, args.nl, args.ne, args.ngmm, args.nout, args.nlayers, args.do, args.fold)
 
-model.to(device)
-state_dict = torch.load("models/{}/{}.pth".format(name, arch), map_location=device)
+model.to(args.d)
+state_dict = torch.load("models/{}/{}_best.pth".format(name, arch), map_location=args.d)
 model.load_state_dict(state_dict)
 
-if name == "asas_sn":
-    test_features, val_features, y_prob_test, y_prob_val, test_logits, val_logits = feature_extraction_asas_sn(dataset, model, device, fold=fold)
+if name == "asas_sn" or name == "toy":
+    test_features, val_features, y_prob_test, y_prob_val, test_logits, val_logits = feature_extraction_asas_sn(dataset, model, args.d, fold=args.fold)
 else:
-    train_features, val_features, y_prob_train, y_prob_val = feature_extraction(dataset, model, device, fold=fold)
+    train_features, val_features, y_prob_train, y_prob_val = feature_extraction(dataset, model, args.d, fold=args.fold)
 
 y_val = dataset.y_val
 reducer = umap.UMAP()
 
-if name == "asas_sn":
+if name == "asas_sn" or name == "toy":
     y_test = dataset.y_test
     reducer.fit(val_features)
     test_embedding = reducer.transform(test_features)
     plot_embeddings(test_embedding, y_test, "figures/{}/umap_{}.png".format(name, arch))
 
-    mask = y_test != 8
+    if name == "asas_sn":
+        mask = y_test != 8
+    elif name == "toy":
+        mask = (y_test != 3) & (y_test != 4)
     target = y_test[mask]
     y_prob = y_prob_test[mask]
     y_pred = np.argmax(y_prob, axis=1)
@@ -147,8 +160,12 @@ if name == "asas_sn":
     accuracy = (target == y_pred).sum() / len(target)
     cm = confusion_matrix(target, y_pred)
 
-    plot_confusion_matrix(cm, idx2lab[:-1], name, "figures/{}/linear_{}_cm_norm.png".format(name, arch), normalize=True)
-    plot_confusion_matrix(cm, idx2lab[:-1], "{}, accuracy: {:.4f}".format(name, accuracy), "figures/{}/linear_{}_cm.png".format(name, arch), normalize=False)
+    if name == "asas_sn":
+        plot_confusion_matrix(cm, idx2lab[:-1], name, "figures/{}/{}_cm_norm.png".format(name, arch), normalize=True)
+        plot_confusion_matrix(cm, idx2lab[:-1], "{}, accuracy: {:.4f}".format(name, accuracy), "figures/{}/{}_cm.png".format(name, arch), normalize=False)
+    elif name == "toy":
+        plot_confusion_matrix(cm, idx2lab[:-2], name, "figures/{}/{}_cm_norm.png".format(name, arch), normalize=True)
+        plot_confusion_matrix(cm, idx2lab[:-2], "{}, accuracy: {:.4f}".format(name, accuracy), "figures/{}/{}_cm.png".format(name, arch), normalize=False)
 
 else:
     y_train = dataset.y_train
@@ -163,21 +180,24 @@ else:
     plot_confusion_matrix(cm, idx2lab, name, "figures/{}/linear_{}_cm_norm.png".format(name, arch), normalize=True)
     plot_confusion_matrix(cm, idx2lab, "{}, accuracy: {:.4f}".format(name, accuracy), "figures/{}/linear_{}_cm.png".format(name, arch), normalize=False)
 
-if name == "asas_sn":
-    z_val = torch.tensor(val_features, dtype=torch.float, device=device)
-    z_test = torch.tensor(test_features, dtype=torch.float, device=device)
-    logits_val = torch.tensor(val_logits, dtype=torch.float, device=device)
-    logits_test = torch.tensor(test_logits, dtype=torch.float, device=device)
+if name == "asas_sn" or name == "toy":
+    z_val = torch.tensor(val_features, dtype=torch.float, device=args.d)
+    z_test = torch.tensor(test_features, dtype=torch.float, device=args.d)
+    logits_val = torch.tensor(val_logits, dtype=torch.float, device=args.d)
+    logits_test = torch.tensor(test_logits, dtype=torch.float, device=args.d)
 
     phi_val, mu_val, cov_val = compute_params(z_val, logits_val)
     phi_test, mu_test, cov_test = compute_params(z_test, logits_test)
+    
+    val_energy = compute_energy(z_val, phi=phi_val, mu=mu_val, cov=cov_val).cpu().numpy()
+    test_energy = compute_energy(z_test, phi=phi_test, mu=mu_test, cov=cov_test).cpu().numpy()
 
-    val_energy = compute_energy(z_val, phi_val, mu_val, cov_val).cpu().numpy()
-    test_energy = compute_energy(z_test, phi_test, mu_test, cov_test).cpu().numpy()
-
-# new code
     labels = np.ones(len(y_test))
-    labels[y_test == 8] = 0  # class 8 is outlier
+    if name == "asas_sn":
+        labels[y_test == 8] = 0  # class 8 is outlier
+    elif name == "toy":
+        labels[y_test == 3] = 0
+        labels[y_test == 4] = 0
 
     scores_in = test_energy[labels == 1]
     scores_out = test_energy[labels == 0]
@@ -205,7 +225,7 @@ if name == "asas_sn":
     df["aucroc"] = [aucroc, aucroc]
     df["aucpr"] = [aucpr, aucpr]
     print(df)
-    df.to_csv("summary.csv", index=False)
+    df.to_csv("files/summary_{}.csv".format(name), index=False)
 
     plt.clf()
     plt.hist(val_energy, bins=bins, color="black", label="val", histtype="step")
@@ -217,7 +237,7 @@ if name == "asas_sn":
     plt.xlabel("energy")
     plt.ylabel("counts")
     plt.tight_layout()
-    plt.savefig("figures/asas_sn/scores.png", dpi=200)
+    plt.savefig("figures/{}/scores.png".format(name), dpi=200)
 
     plt.clf()
     plt.title("AUCPR: {:.4f}".format(aucpr))
@@ -229,7 +249,7 @@ if name == "asas_sn":
     plt.xlim([0, 1])
     plt.ylim([0, 1])
     plt.tight_layout()
-    plt.savefig("figures/asas_sn/precision_recall_curve.png", dpi=200)
+    plt.savefig("figures/{}/precision_recall_curve.png".format(name), dpi=200)
 
     plt.clf()
     plt.title("AUCROC: {:.4f}".format(aucroc))
@@ -242,4 +262,4 @@ if name == "asas_sn":
     plt.xlim([0, 1])
     plt.ylim([0, 1])
     plt.tight_layout()
-    plt.savefig("figures/asas_sn/roc_curve.png", dpi=200)
+    plt.savefig("figures/{}/roc_curve.png".format(name), dpi=200)

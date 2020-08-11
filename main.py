@@ -20,7 +20,7 @@ class Model(object):
         if os.path.exists(log_path) and os.path.isdir(log_path):
             shutil.rmtree(log_path)
         self.writer = SummaryWriter(log_path)
-        self.wmse = WMSELoss()
+        self.wmse = WMSELoss(nc=2)
         self.ce = torch.nn.CrossEntropyLoss()
         self.best_loss = np.inf
 
@@ -104,7 +104,8 @@ class Model(object):
                 self.best_model = self.model.state_dict()
                 self.best_loss = val_loss
         model_state_dict = self.model.state_dict()
-        torch.save(model_state_dict, "models/{}/{}.pth".format(self.args.name, self.args.arch))
+        torch.save(self.best_model, "models/{}/{}_best.pth".format(self.args.name, self.args.arch))
+        torch.save(model_state_dict, "models/{}/{}_last.pth".format(self.args.name, self.args.arch))
         return loss
 
 
@@ -124,7 +125,7 @@ if __name__ == "__main__":
     parser.add_argument("--alpha", type=float, default=1., help="cross entropy weight (default 1)")
     parser.add_argument("--beta", type=float, default=1e-3, help="gmm energy weight (default 1e-3)")
     parser.add_argument("--arch", type=str, default="gru", choices=["gru", "lstm"], help="rnn architecture (default gru)")
-    parser.add_argument("--name", type=str, default="linear", choices=["linear", "macho", "asas", "asas_sn"], help="dataset name (default linear)")
+    parser.add_argument("--name", type=str, default="linear", choices=["linear", "macho", "asas", "asas_sn", "toy"], help="dataset name (default linear)")
     parser.add_argument("--fold", action="store_true", help="folded light curves")
     args = parser.parse_args()
     print(args)
@@ -139,6 +140,9 @@ if __name__ == "__main__":
 
     if args.name == "asas_sn":
         dataset = ASASSNDataset(fold=args.fold, bs=args.bs, device=args.d, eval=True)
+    elif args.name == "toy":
+        from toy_dataset import ToyDataset
+        dataset = ToyDataset(args, val_size=0.1, sl=64)
     else:
         dataset = LightCurveDataset(args.name, fold=args.fold, bs=args.bs, device=args.d, eval=True)
     args.nin = dataset.x_train.shape[2]
