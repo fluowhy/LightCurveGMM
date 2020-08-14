@@ -107,7 +107,7 @@ class Args:
     nout = 1
     nlayers = 2
     do = 0.5
-    fold = True
+    fold = False
 
 args = Args()
 
