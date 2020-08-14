@@ -132,9 +132,11 @@ if __name__ == "__main__":
 
     make_dir("figures")
     make_dir("models")
+    make_dir("files")
 
     make_dir("figures/{}".format(args.name))
     make_dir("models/{}".format(args.name))
+    make_dir("files/{}".format(args.name))
 
     seed_everything()
 
