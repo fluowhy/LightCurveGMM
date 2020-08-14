@@ -93,21 +93,21 @@ def metrics_summary(scores_test, scores_train, y_true, percentile):
 
 seed_everything()
 
-name = "toy"
+name = "asas_sn"
 arch = "gru"
 
 class Args:
     bs = 256
     d = "cpu"
-    ngmm = 3
-    nin = 2
+    ngmm = 8
+    nin = 3
     nh = 96
     nl = 16
     ne = 16
     nout = 1
     nlayers = 2
     do = 0.5
-    fold = False
+    fold = True
 
 args = Args()
 

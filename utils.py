@@ -58,6 +58,9 @@ def compute_energy(z, phi=None, mu=None, cov=None, logits=None):
     # if torch.isnan(det_cov.sum()):
         # det_cov = torch.ones_like(det_cov) * eps
     # det_cov = 0.5 * torch.logdet(cov)
+    if torch.isnan(det_cov.sum()):
+        mask = det_cov != det_cov
+        det_cov[mask] = det_cov[~ mask].mean()
 
     # N x K
     exp_term_tmp = - 0.5 * torch.sum(torch.sum(z_mu.unsqueeze(-1) * cov_inverse.unsqueeze(0), dim=-2) * z_mu, dim=-1)
@@ -73,7 +76,7 @@ def compute_energy(z, phi=None, mu=None, cov=None, logits=None):
     arg = torch.sum(phi.unsqueeze(0) * exp_term, dim=1)
     # sample_energy = - max_val.squeeze() - torch.log(arg + eps)
     sample_energy = 1 / (arg + eps)
-    sample_energy = sample_energy.clamp(max=1e3)
+    sample_energy = sample_energy.clamp(max=1e4)
     # sample_energy = - torch.log(arg + eps)
     
     if torch.isnan(sample_energy.mean()):
