@@ -75,7 +75,7 @@ class GRUGMM(torch.nn.Module):
         pred = self.decode(x[:, :, 0], z)  # index: 0-time, 1-flux, 2-flux_err
         euc, cos = distances(x, pred)
         if p is None:
-            zc = torch.cat((z, euc, cos, m, s), dim=1)
+            zc = torch.cat((z, euc, cos, m.unsqueeze(-1), s.unsqueeze(-1)), dim=1)
         else:
             zc = torch.cat((z, euc, cos, m.unsqueeze(-1), s.unsqueeze(-1), p.unsqueeze(-1)), dim=1) 
         logits = self.estimation_network(zc)
