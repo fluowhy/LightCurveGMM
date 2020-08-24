@@ -106,14 +106,14 @@ class Model(object):
                 self.best_model = self.model.state_dict()
                 self.best_loss = val_loss
         model_state_dict = self.model.state_dict()
-        torch.save(self.best_model, "models/{}/{}_best.pth".format(self.args.name, self.args.arch))
-        torch.save(model_state_dict, "models/{}/{}_last.pth".format(self.args.name, self.args.arch))
+        torch.save(self.best_model, "models/{}/fold_{}/{}_best.pth".format(self.args.name, self.args.fold, self.args.arch))
+        torch.save(model_state_dict, "models/{}/fold_{}/{}_last.pth".format(self.args.name, self.args.fold, self.args.arch))
         return loss
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="autoencoder")
-    parser.add_argument('--bs', type=int, default=128, help="batch size (default 128)")
+    parser.add_argument('--bs', type=int, default=2048, help="batch size (default 2048)")
     parser.add_argument('--e', type=int, default=2, help="epochs (default 2)")
     parser.add_argument("--d", type=str, default="cpu", help="select device (default cpu)")
     parser.add_argument("--lr", type=float, default=2e-4, help="learning rate (default 2e-4)")
@@ -140,6 +140,10 @@ if __name__ == "__main__":
     make_dir("models/{}".format(args.name))
     make_dir("files/{}".format(args.name))
 
+    make_dir("figures/{}/fold_{}".format(args.name, args.fold))
+    make_dir("models/{}/fold_{}".format(args.name, args.fold))
+    make_dir("files/{}/fold_{}".format(args.name, args.fold))
+
     seed_everything()
 
     if args.name == "asas_sn":
@@ -154,4 +158,4 @@ if __name__ == "__main__":
 
     aegmm = Model(args)
     loss = aegmm.fit(dataset.train_dataloader, dataset.val_dataloader, args)
-    plot_loss(loss, "figures/{}/{}_loss.png".format(args.name, args.arch), dpi=400)
+    plot_loss(loss, "figures/{}/fold_{}/{}_loss.png".format(args.name, args.fold, args.arch), dpi=400)

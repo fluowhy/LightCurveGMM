@@ -9,6 +9,7 @@ import umap
 import matplotlib.pyplot as plt
 import pandas as pd
 import pdb
+import argparse
 
 from utils import seed_everything, plot_confusion_matrix, load_json, compute_energy, compute_params
 from datasets import LightCurveDataset, ASASSNDataset
@@ -91,51 +92,52 @@ def metrics_summary(scores_test, scores_train, y_true, percentile):
     return precision, recall, f1
 
 
+parser = argparse.ArgumentParser(description="autoencoder")
+parser.add_argument('--bs', type=int, default=2048, help="batch size (default 2048)")
+parser.add_argument("--d", type=str, default="cpu", help="select device (default cpu)")
+parser.add_argument('--ngmm', type=int, default=2, help="number of gaussian components (default 2)")
+parser.add_argument('--nin', type=int, default=3, help="input size (default 3)")
+parser.add_argument('--nh', type=int, default=96, help="hidden size (default 96)")
+parser.add_argument('--nl', type=int, default=16, help="hidden size (default 16)")
+parser.add_argument('--ne', type=int, default=16, help="estimation network size (default 16)")
+parser.add_argument('--nout', type=int, default=1, help="output size (default 1)")
+parser.add_argument('--nlayers', type=int, default=2, help="number of hidden layers (default 2)")
+parser.add_argument("--do", type=float, default=0.5, help="dropout value (default 0.5)")
+parser.add_argument("--fold", action="store_true", help="folded light curves")
+parser.add_argument("--arch", type=str, default="gru", choices=["gru", "lstm"], help="rnn architecture (default gru)")
+parser.add_argument("--name", type=str, default="linear", choices=["linear", "macho", "asas", "asas_sn", "toy"], help="dataset name (default linear)")
+
+args = parser.parse_args()
+print(args)
+
 seed_everything()
 
-name = "asas_sn"
-arch = "gru"
-
-class Args:
-    bs = 256
-    d = "cpu"
-    ngmm = 8
-    nin = 3
-    nh = 96
-    nl = 16
-    ne = 16
-    nout = 1
-    nlayers = 2
-    do = 0.5
-    fold = False
-
-args = Args()
-
-if name == "asas_sn":    
+if args.name == "asas_sn":    
     dataset = ASASSNDataset(fold=args.fold, bs=args.bs, device=args.d, eval=True)
     lab2idx = load_json("../datasets/asas_sn/lab2idx.json")
     idx2lab = list(lab2idx.keys())
-elif name == "toy":
+elif args.name == "toy":
     from toy_dataset import ToyDataset
 
     dataset = ToyDataset(args, val_size=0.1, sl=64)
     lab2idx = dataset.lab2idx
     idx2lab = list(lab2idx.keys())
 else:
-    dataset = LightCurveDataset(name, fold=args.fold, bs=args.bs, device=args.d, eval=True)
-    lab2idx = load_json("processed_data/{}/lab2idx.json".format(name))
+    dataset = LightCurveDataset(args.name, fold=args.fold, bs=args.bs, device=args.d, eval=True)
+    lab2idx = load_json("processed_data/{}/lab2idx.json".format(args.name))
     idx2lab = list(lab2idx.keys())
 
-if arch == "gru":
+if args.arch == "gru":
     model = GRUGMM(args.nin, args.nh, args.nl, args.ne, args.ngmm, args.nout, args.nlayers, args.do, args.fold)
-elif arch == "lstm":
+elif args.arch == "lstm":
     model = LSTMGMM(args.nin, args.nh, args.nl, args.ne, args.ngmm, args.nout, args.nlayers, args.do, args.fold)
 
+fig_path = "figures/{}/fold_{}".format(args.name, args.fold)
 model.to(args.d)
-state_dict = torch.load("models/{}/{}_best.pth".format(name, arch), map_location=args.d)
+state_dict = torch.load("models/{}/fold_{}/{}_best.pth".format(args.name, args.fold, args.arch), map_location=args.d)
 model.load_state_dict(state_dict)
 
-if name == "asas_sn" or name == "toy":
+if args.name == "asas_sn" or args.name == "toy":
     test_features, val_features, y_prob_test, y_prob_val, test_logits, val_logits = feature_extraction_asas_sn(dataset, model, args.d, fold=args.fold)
 else:
     train_features, val_features, y_prob_train, y_prob_val = feature_extraction(dataset, model, args.d, fold=args.fold)
@@ -143,15 +145,15 @@ else:
 y_val = dataset.y_val
 reducer = umap.UMAP()
 
-if name == "asas_sn" or name == "toy":
+if args.name == "asas_sn" or args.name == "toy":
     y_test = dataset.y_test
     reducer.fit(val_features)
     test_embedding = reducer.transform(test_features)
-    plot_embeddings(test_embedding, y_test, "figures/{}/umap_{}.png".format(name, arch))
+    plot_embeddings(test_embedding, y_test, "{}/umap_{}.png".format(fig_path, args.arch))
 
-    if name == "asas_sn":
+    if args.name == "asas_sn":
         mask = y_test != 8
-    elif name == "toy":
+    elif args.name == "toy":
         mask = (y_test != 3) & (y_test != 4)
     target = y_test[mask]
     y_prob = y_prob_test[mask]
@@ -160,27 +162,27 @@ if name == "asas_sn" or name == "toy":
     accuracy = (target == y_pred).sum() / len(target)
     cm = confusion_matrix(target, y_pred)
 
-    if name == "asas_sn":
-        plot_confusion_matrix(cm, idx2lab[:-1], name, "figures/{}/{}_cm_norm.png".format(name, arch), normalize=True)
-        plot_confusion_matrix(cm, idx2lab[:-1], "{}, accuracy: {:.4f}".format(name, accuracy), "figures/{}/{}_cm.png".format(name, arch), normalize=False)
-    elif name == "toy":
-        plot_confusion_matrix(cm, idx2lab[:-2], name, "figures/{}/{}_cm_norm.png".format(name, arch), normalize=True)
-        plot_confusion_matrix(cm, idx2lab[:-2], "{}, accuracy: {:.4f}".format(name, accuracy), "figures/{}/{}_cm.png".format(name, arch), normalize=False)
+    if args.name == "asas_sn":
+        plot_confusion_matrix(cm, idx2lab[:-1], args.name, "{}/{}_cm_norm.png".format(fig_path, args.arch), normalize=True)
+        plot_confusion_matrix(cm, idx2lab[:-1], "{}, accuracy: {:.4f}".format(args.name, accuracy), "{}/{}_cm.png".format(fig_path, args.arch), normalize=False)
+    elif args.name == "toy":
+        plot_confusion_matrix(cm, idx2lab[:-2], args.name, "{}/{}_cm_norm.png".format(fig_path, args.arch), normalize=True)
+        plot_confusion_matrix(cm, idx2lab[:-2], "{}, accuracy: {:.4f}".format(args.name, accuracy), "{}/{}_cm.png".format(fig_path, args.arch), normalize=False)
 
 else:
     y_train = dataset.y_train
     reducer.fit(train_features)    
     val_embedding = reducer.transform(val_features)
-    plot_embeddings(val_embedding, y_val, "figures/{}/umap_{}.png".format(name, arch))
+    plot_embeddings(val_embedding, y_val, "{}/umap_{}.png".format(fig_path, args.arch))
 
     y_pred = np.argmax(y_prob_val, axis=1)
     accuracy = (y_val == y_pred).sum() / len(y_val)
     cm = confusion_matrix(y_val, y_pred)
 
-    plot_confusion_matrix(cm, idx2lab, name, "figures/{}/linear_{}_cm_norm.png".format(name, arch), normalize=True)
-    plot_confusion_matrix(cm, idx2lab, "{}, accuracy: {:.4f}".format(name, accuracy), "figures/{}/linear_{}_cm.png".format(name, arch), normalize=False)
+    plot_confusion_matrix(cm, idx2lab, args.name, "{}/{}_cm_norm.png".format(fig_path, args.arch), normalize=True)
+    plot_confusion_matrix(cm, idx2lab, "{}, accuracy: {:.4f}".format(args.name, accuracy), "{}/{}_cm.png".format(fig_path, args.arch), normalize=False)
 
-if name == "asas_sn" or name == "toy":
+if args.name == "asas_sn" or args.name == "toy":
     z_val = torch.tensor(val_features, dtype=torch.float, device=args.d)
     z_test = torch.tensor(test_features, dtype=torch.float, device=args.d)
     logits_val = torch.tensor(val_logits, dtype=torch.float, device=args.d)
@@ -193,9 +195,9 @@ if name == "asas_sn" or name == "toy":
     test_energy = compute_energy(z_test, phi=phi_test, mu=mu_test, cov=cov_test).cpu().numpy()
 
     labels = np.ones(len(y_test))
-    if name == "asas_sn":
+    if args.name == "asas_sn":
         labels[y_test == 8] = 0  # class 8 is outlier
-    elif name == "toy":
+    elif args.name == "toy":
         labels[y_test == 3] = 0
         labels[y_test == 4] = 0
 
@@ -225,7 +227,7 @@ if name == "asas_sn" or name == "toy":
     df["aucroc"] = [aucroc, aucroc]
     df["aucpr"] = [aucpr, aucpr]
     print(df)
-    df.to_csv("files/summary_{}.csv".format(name), index=False)
+    df.to_csv("files/summary_{}_fold_{}_arch_{}.csv".format(args.name, args.fold, args.arch), index=False)
 
     plt.clf()
     plt.hist(val_energy, bins=bins, color="black", label="val", histtype="step")
@@ -237,7 +239,7 @@ if name == "asas_sn" or name == "toy":
     plt.xlabel("energy")
     plt.ylabel("counts")
     plt.tight_layout()
-    plt.savefig("figures/{}/scores.png".format(name), dpi=200)
+    plt.savefig("{}/scores.png".format(fig_path), dpi=200)
 
     plt.clf()
     plt.title("AUCPR: {:.4f}".format(aucpr))
@@ -249,7 +251,7 @@ if name == "asas_sn" or name == "toy":
     plt.xlim([0, 1])
     plt.ylim([0, 1])
     plt.tight_layout()
-    plt.savefig("figures/{}/precision_recall_curve.png".format(name), dpi=200)
+    plt.savefig("{}/precision_recall_curve.png".format(fig_path), dpi=200)
 
     plt.clf()
     plt.title("AUCROC: {:.4f}".format(aucroc))
@@ -262,4 +264,4 @@ if name == "asas_sn" or name == "toy":
     plt.xlim([0, 1])
     plt.ylim([0, 1])
     plt.tight_layout()
-    plt.savefig("figures/{}/roc_curve.png".format(name), dpi=200)
+    plt.savefig("{}/roc_curve.png".format(fig_path), dpi=200)
