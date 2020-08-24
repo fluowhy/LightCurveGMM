@@ -20,7 +20,9 @@ class Model(object):
         if os.path.exists(log_path) and os.path.isdir(log_path):
             shutil.rmtree(log_path)
         self.writer = SummaryWriter(log_path)
-        self.wmse = WMSELoss(nc=2)
+        nc = 2 if args.name == "toy" else 3
+        self.wmse = WMSELoss(nc=nc)
+        print(nc, self.wmse)                
         self.ce = torch.nn.CrossEntropyLoss()
         self.best_loss = np.inf
 
