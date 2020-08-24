@@ -95,7 +95,7 @@ def metrics_summary(scores_test, scores_train, y_true, percentile):
 parser = argparse.ArgumentParser(description="autoencoder")
 parser.add_argument('--bs', type=int, default=2048, help="batch size (default 2048)")
 parser.add_argument("--d", type=str, default="cpu", help="select device (default cpu)")
-parser.add_argument('--ngmm', type=int, default=2, help="number of gaussian components (default 2)")
+parser.add_argument('--ngmm', type=int, default=8, help="number of gaussian components (default 8)")
 parser.add_argument('--nin', type=int, default=3, help="input size (default 3)")
 parser.add_argument('--nh', type=int, default=96, help="hidden size (default 96)")
 parser.add_argument('--nl', type=int, default=16, help="hidden size (default 16)")
