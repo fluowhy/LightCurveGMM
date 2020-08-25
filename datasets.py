@@ -301,13 +301,26 @@ class ASASSNDataset(object):
         return
 
     def define_datasets(self):
+        # balancing
+        labs, counts = np.unique(self.y_train, return_counts=True)
+        mask = labs != -99
+        weights = 1 / counts[mask]
+        weights /= 2 * weights.sum()
+        weights = np.insert(weights, 0, 0.5)
+
+        sample_weight = np.zeros(len(self.y_train))
+        for i, lab in enumerate(labs):
+            mask = self.y_train == lab
+            sample_weight[mask] = weights[i]
+        sampler = torch.utils.data.WeightedRandomSampler(sample_weight, len(sample_weight))
+        
         if self.fold:            
             self.train_dataset = MyFoldedDataset(self.x_train, self.y_train, self.m_train, self.s_train, self.p_train, self.seq_len_train, device=self.device)
             self.val_dataset = MyFoldedDataset(self.x_val, self.y_val, self.m_val, self.s_val, self.p_val, self.seq_len_val, device=self.device)
         else:
             self.train_dataset = MyDataset(self.x_train, self.y_train, self.m_train, self.s_train, self.seq_len_train, device=self.device)
             self.val_dataset = MyDataset(self.x_val, self.y_val, self.m_val, self.s_val, self.seq_len_val, device=self.device)
-        self.train_dataloader = DataLoader(self.train_dataset, batch_size=self.bs, shuffle=True)
+        self.train_dataloader = DataLoader(self.train_dataset, batch_size=self.bs, sampler=sampler)
         self.val_dataloader = DataLoader(self.val_dataset, batch_size=self.bs, shuffle=True)
         return
 
