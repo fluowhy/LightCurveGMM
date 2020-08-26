@@ -134,7 +134,7 @@ elif args.arch == "lstm":
 
 fig_path = "figures/{}/fold_{}".format(args.name, args.fold)
 model.to(args.d)
-state_dict = torch.load("models/{}/fold_{}/{}_best.pth".format(args.name, args.fold, args.arch), map_location=args.d)
+state_dict = torch.load("models/{}/fold_{}/{}_last.pth".format(args.name, args.fold, args.arch), map_location=args.d)
 model.load_state_dict(state_dict)
 
 if args.name == "asas_sn" or args.name == "toy":
