@@ -9,6 +9,11 @@ import matplotlib.pyplot as plt
 import pdb
 
 
+def calculate_seq_len(x):
+    sl = (x[:, :, 2] != 0).sum(1)
+    return sl
+
+
 def compute_params(z, logits):
     # source https://github.com/danieltan07/dagmm/blob/master/model.py
     softmax = torch.nn.Softmax(dim=1)
@@ -126,40 +131,6 @@ def plot_confusion_matrix(cm, labels, title, savename, normalize=False, dpi=200)
     return
 
 
-def plot_loss(loss, savename, dpi=200):
-    epochs = np.arange(len(loss))
-    fig, ax = plt.subplots(4, 1, figsize=(20, 10))
-
-    ax[0].plot(epochs, loss[:, 0, 0], color="navy", label="train")
-    ax[0].plot(epochs, loss[:, 1, 0], color="red", label="val")
-    ax[0].set_ylabel("total loss")
-    ax[0].legend()
-    ax[0].grid()
-
-    ax[1].plot(epochs, loss[:, 0, 1], color="navy", label="train")
-    ax[1].plot(epochs, loss[:, 1, 1], color="red", label="val")
-    ax[1].set_ylabel("reconstruction")
-    ax[1].legend()
-    ax[1].grid()
-
-    ax[2].plot(epochs, loss[:, 0, 2], color="navy", label="train")
-    ax[2].plot(epochs, loss[:, 1, 2], color="red", label="val")
-    ax[2].set_ylabel("cross entropy")
-    ax[2].legend()
-    ax[2].grid()
-
-    ax[3].plot(epochs, loss[:, 0, 3], color="navy", label="train")
-    ax[3].plot(epochs, loss[:, 1, 3], color="red", label="val")
-    ax[3].set_ylabel("gmm energy")
-    ax[3].set_xlabel("epoch")
-    ax[3].legend()
-    ax[3].grid()
-    
-    plt.tight_layout()
-    plt.savefig(savename, dpi=dpi)
-    return
-
-
 def save_json(data, savename):
     with open(savename, "w") as fp:
         json.dump(data, fp)
@@ -199,48 +170,32 @@ class WMSELoss(torch.nn.Module):
 
 
 class MyDataset(Dataset):
-    def __init__(self, x, y, m, s, z, device="cpu"):
+    def __init__(self, x, y, z, p, device="cpu"):
         self.n, _, _ = x.shape  # rnn
         self.x = torch.tensor(x, dtype=torch.float, device=device)
         self.y = torch.tensor(y, dtype=torch.long, device=device)
-        self.m = torch.tensor(m, dtype=torch.float, device=device)
-        self.s = torch.tensor(s, dtype=torch.float, device=device)
         self.z = torch.tensor(z, dtype=torch.float, device=device)
-
-    def __getitem__(self, index):
-        return self.x[index], self.y[index], self.m[index], self.s[index], self.z[index]
-
-    def __len__(self):
-        return self.n
-
-
-class MyFoldedDataset(Dataset):
-    def __init__(self, x, y, m, s, p, z, device="cpu"):
-        self.n, _, _ = x.shape  # rnn
-        self.x = torch.tensor(x, dtype=torch.float, device=device)
-        self.y = torch.tensor(y, dtype=torch.long, device=device)
-        self.m = torch.tensor(m, dtype=torch.float, device=device)
-        self.s = torch.tensor(s, dtype=torch.float, device=device)
         self.p = torch.tensor(p, dtype=torch.float, device=device)
-        self.z = torch.tensor(z, dtype=torch.float, device=device)
 
     def __getitem__(self, index):
-        return self.x[index], self.y[index], self.m[index], self.s[index], self.p[index], self.z[index]
+        return self.x[index], self.y[index], self.z[index], self.p[index]
 
     def __len__(self):
         return self.n
 
 
 def seed_everything(seed=1234):
-    """
-    Author: Benjamin Minixhofer
-    """
+    # https://www.cs.mcgill.ca/~ksinha4/practices_for_reproducibility/
+    """Set seed"""
     random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = False  # True before
+        torch.backends.cudnn.benchmark = True  # False before
+    os.environ["PYTHONHASHSEED"] = str(seed)
     return
 
 

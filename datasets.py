@@ -1,338 +1,144 @@
 import numpy as np
-import pandas as pd
 import torch
-from torch.utils.data import Dataset, DataLoader
-from tqdm import tqdm
-import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
 import pdb
 
-from utils import make_dir, save_json, MyDataset, MyFoldedDataset
+from torch.utils.data import Dataset, DataLoader
+from utils import make_dir, load_json, save_json, MyDataset, calculate_seq_len
 
 
-def phase_fold(x, p, seq_len):
-    x_copy = x.copy()
-    t = x[:seq_len, 0]
-    mag = x[:seq_len, 1]
-    err = x[:seq_len, 2]    
-    t = t - t[0]
-    t = (t % p) / p
-    index = np.argsort(t)
-    t = t[index]
-    mag = mag[index]
-    err = err[index]
-    x_copy[:seq_len, 0] = t
-    x_copy[:seq_len, 1] = mag
-    x_copy[:seq_len, 2] = err
-    return x_copy
+def random_shuffle(x, y, p):
+    index = np.arange(len(x))
+    np.random.shuffle(index)
+    return x[index], y[index], p[index]
 
 
-class LightCurveDataset(object):
-    def __init__(self, name, fold, bs, device="cpu", val_size=0.2, eps=1e-10, eval=True):
-        self.name = name
-        self.fold = fold
-        self.eps = eps
-        self.val_size = val_size
-        self.bs = bs
-        self.device = device
+def read_data(fold=False):
+    if fold:        
+        x_train = np.load("../datasets/asas_sn/pf_train.npy")
+        x_test = np.load("../datasets/asas_sn/pf_test.npy")
+        x_val = np.load("../datasets/asas_sn/pf_val.npy")
+        p_train = np.load("../datasets/asas_sn/p_train.npy")
+        p_test = np.load("../datasets/asas_sn/p_test.npy")
+        p_val = np.load("../datasets/asas_sn/p_val.npy")
+    else:
+        x_train = np.load("../datasets/asas_sn/x_train.npy")
+        x_test = np.load("../datasets/asas_sn/x_test.npy")
+        x_val = np.load("../datasets/asas_sn/x_val.npy")
+    y_train = np.load("../datasets/asas_sn/y_train.npy")
+    y_test = np.load("../datasets/asas_sn/y_test.npy")
+    y_val = np.load("../datasets/asas_sn/y_val.npy")
+    if fold:
+        return x_train, x_test, x_val, y_train, y_test, y_val, p_train, p_test, p_val
+    else:
+        return x_train, x_test, x_val, y_train, y_test, y_val
 
-        self.data_path = "processed_data/{}".format(name)
-        make_dir("processed_data")
-        make_dir(self.data_path)
-        
-        if not eval:
-            self.load_data()
-            self.fold_light_curves()
-            self.normalize()
-            self.compute_dt()
-            self.time_series_features()
-            self.train_val_split()
-            self.save_processed_data()
+
+def time_norm(x):
+    tmin = x[:, 0, 0][:, np.newaxis]
+    x[:, :, 0] = x[:, :, 0] - tmin
+    dt = x[:, 1:, 0] - x[:, :-1, 0]
+    x[:, :, 0] = x[:, :, 0] / dt.max()
+    return x
+
+
+def filter_inlier_data(x_train, y_train, outlier_class):
+    # filter by inlier class for training
+    inlier_filter = y_train != outlier_class
+    x_train = x_train[inlier_filter]
+    y_train = y_train[inlier_filter]
+    return x_train, y_train
+
+
+def change_label(y_train, y_test, outlier_class):
+    new2old = np.unique(y_train)
+    old2new = {lab: i for i, lab in enumerate(new2old)}
+    old2new[outlier_class] = - 99
+    y_train = np.array([old2new[lab] for lab in y_train])
+    mask = y_test == outlier_class
+    y_test = np.array([old2new[lab] for lab in y_test])
+    return y_train, y_test
+
+
+def normalize_light_curves(x, eps=1e-10, minmax=False):
+    seq_len = (x[:, :, 2] != 0).sum(axis=-1)
+    means = np.zeros(len(x)) 
+    stds = np.zeros(len(x))
+    for i in range(len(x)):
+        xi = x[i, :seq_len[i], 1]
+        mean = xi.mean()
+        std = xi.std()
+        if minmax:
+            y1 = 1
+            y0 = -1
+            xmin = xi.min()
+            xmax = xi.max()
+            delta_y = y1 - y0
+            delta_x = xmax - xmin
+            x[i, :seq_len[i], 1] = delta_y / delta_x * (x[i, :seq_len[i], 1] - xmin) + y0
+            if x.shape[2] == 3:
+                x[i, :seq_len[i], 2] = delta_y / delta_x * x[i, :seq_len[i], 2]
         else:
-            self.load_processed_data()
-            self.compute_seq_len()
-
-        self.define_datasets()
-
-    def load_data(self):
-        self.x = np.load("../datasets/{}/light_curves.npy".format(self.name))
-        self.metadata = pd.read_csv("../datasets/{}/metadata.csv".format(self.name))
-        return
-
-    def fold_light_curves(self):
-        self.x_folded = self.x.copy()
-        for i in tqdm(range(len(self.x))):
-            dfi = self.metadata.loc[i]
-            self.x_folded[i] = phase_fold(self.x[i], dfi["p"], int(dfi["seq_len"]))
-        return
-
-    def normalize(self):
-        mask = self.x[:, :, 2] != 0
-        means = (self.metadata["mean"].values)[:, np.newaxis]
-        stds = (self.metadata["std"].values)[:, np.newaxis]
-        self.x[:, :, 1] = (self.x[:, :, 1] - means) / (stds + self.eps) * mask
-        self.x[:, :, 2] = self.x[:, :, 2] / (stds + self.eps) * mask
-
-        self.x_folded[:, :, 1] = (self.x_folded[:, :, 1] - means) / (stds + self.eps) * mask
-        self.x_folded[:, :, 2] = self.x_folded[:, :, 2] / (stds + self.eps) * mask
-        return
-
-    def compute_dt(self):
-        mask = self.x[:, :, 2] != 0
-        self.x[:, 1:, 0] = self.x[:, 1:, 0] - self.x[:, :-1, 0]
-        self.x[:, 0, 0] = 0
-        self.x[:, :, 0] *= mask
-
-        self.x_folded[:, 1:, 0] = self.x_folded[:, 1:, 0] - self.x_folded[:, :-1, 0]
-        self.x_folded[:, 0, 0] = 0
-        self.x_folded[:, :, 0] *= mask
-        return
-
-    def time_series_features(self):
-        self.m = self.metadata["mean"].values
-        self.s = self.metadata["std"].values
-        self.p = self.metadata["p"].values
-        self.p = np.log10(self.p)
-        self.seq_len = self.metadata["seq_len"].values
-        return
-
-    def train_val_split(self):
-        index = np.arange(len(self.x))
-        lab2idx = {lab: i for i, lab in enumerate(self.metadata["label"].unique())}
-        save_json(lab2idx, "{}/lab2idx.json".format(self.data_path))
-        self.y  = [lab2idx[lab] for lab in self.metadata["label"].values]
-        self.y = np.array(self.y)      
-        train_idx, val_idx = train_test_split(index, test_size=self.val_size, stratify=self.y, shuffle=True)
-
-        self.x_train = self.x[train_idx]
-        self.x_train_folded = self.x_folded[train_idx]
-        self.y_train = self.y[train_idx]
-        self.m_train = self.m[train_idx]
-        self.s_train = self.s[train_idx]
-        self.p_train = self.p[train_idx]
-        self.seq_len_train = self.seq_len[train_idx]
-
-        self.x_val = self.x[val_idx]
-        self.x_val_folded = self.x_folded[val_idx]
-        self.y_val = self.y[val_idx]
-        self.m_val = self.m[val_idx]
-        self.s_val = self.s[val_idx]
-        self.p_val = self.p[val_idx]
-        self.seq_len_val = self.seq_len[val_idx]
-        return
-
-    def save_processed_data(self):
-        np.save("{}/x_train.npy".format(self.data_path), self.x_train)
-        np.save("{}/x_train_folded.npy".format(self.data_path), self.x_train_folded)
-        np.save("{}/y_train.npy".format(self.data_path), self.y_train)
-        np.save("{}/m_train.npy".format(self.data_path), self.m_train)
-        np.save("{}/s_train.npy".format(self.data_path), self.s_train)
-        np.save("{}/p_train.npy".format(self.data_path), self.p_train)
-        
-        np.save("{}/x_val.npy".format(self.data_path), self.x_val)
-        np.save("{}/x_val_folded.npy".format(self.data_path), self.x_val_folded)
-        np.save("{}/y_val.npy".format(self.data_path), self.y_val)
-        np.save("{}/m_val.npy".format(self.data_path), self.m_val)
-        np.save("{}/s_val.npy".format(self.data_path), self.s_val)
-        np.save("{}/p_val.npy".format(self.data_path), self.p_val)
-        return
-
-    def load_processed_data(self):
-        if self.fold:
-            self.x_train = np.load("{}/x_train_folded.npy".format(self.data_path))
-            self.p_train = np.load("{}/p_train.npy".format(self.data_path))
-            self.x_val = np.load("{}/x_val_folded.npy".format(self.data_path))
-            self.p_val = np.load("{}/p_val.npy".format(self.data_path))
-        else:
-            self.x_train = np.load("{}/x_train.npy".format(self.data_path))
-            self.x_val = np.load("{}/x_val.npy".format(self.data_path))
-
-        self.y_train = np.load("{}/y_train.npy".format(self.data_path))
-        self.m_train = np.load("{}/m_train.npy".format(self.data_path))
-        self.s_train = np.load("{}/s_train.npy".format(self.data_path))
-        
-        self.y_val = np.load("{}/y_val.npy".format(self.data_path))
-        self.m_val = np.load("{}/m_val.npy".format(self.data_path))
-        self.s_val = np.load("{}/s_val.npy".format(self.data_path))
-        return
-
-    def define_datasets(self):
-        if self.fold:            
-            self.train_dataset = MyFoldedDataset(self.x_train, self.y_train, self.m_train, self.s_train, self.p_train, self.seq_len_train, device=self.device)
-            self.val_dataset = MyFoldedDataset(self.x_val, self.y_val, self.m_val, self.s_val, self.p_val, self.seq_len_val, device=self.device)
-        else:
-            self.train_dataset = MyDataset(self.x_train, self.y_train, self.m_train, self.s_train, self.seq_len_train, device=self.device)
-            self.val_dataset = MyDataset(self.x_val, self.y_val, self.m_val, self.s_val, self.seq_len_val, device=self.device)
-        self.train_dataloader = DataLoader(self.train_dataset, batch_size=self.bs, shuffle=True)
-        self.val_dataloader = DataLoader(self.val_dataset, batch_size=self.bs, shuffle=True)
-        return
-
-    def compute_seq_len(self):
-        self.seq_len_train = (self.x_train[:, :, 2] != 0).sum(axis=1)
-        self.seq_len_val = (self.x_val[:, :, 2] != 0).sum(axis=1)
-        return
+            x[i, :seq_len[i], 1] = (x[i, :seq_len[i], 1] - mean) / (std + eps)
+            if x.shape[2] == 3:
+                x[i, :seq_len[i], 2] = x[i, :seq_len[i], 2] / (std + eps)
+        means[i] = mean
+        stds[i] = std
+    means = means[:, np.newaxis]
+    stds = stds[:, np.newaxis]
+    return x, means, stds
 
 
 class ASASSNDataset(object):
-    def __init__(self, fold, bs, device="cpu", val_size=0.2, eps=1e-10, eval=True):
-        self.name = "asas_sn"
-        self.fold = fold
-        self.eps = eps
-        self.val_size = val_size
-        self.bs = bs
-        self.device = device
-
-        self.data_path = "processed_data/{}".format(self.name)
-        make_dir("processed_data")
-        make_dir(self.data_path)
-        
-        if not eval:
-            self.load_data()
-            self.x_train, self.x_train_folded, self.m_train, self.s_train = self.normalize(self.x_train, self.x_train_folded)
-            self.x_test, self.x_test_folded, self.m_test, self.s_test = self.normalize(self.x_test, self.x_test_folded)
-            self.x_val, self.x_val_folded, self.m_val, self.s_val = self.normalize(self.x_val, self.x_val_folded)
-            self.x_train, self.x_train_folded = self.compute_dt(self.x_train, self.x_train_folded)
-            self.x_test, self.x_test_folded = self.compute_dt(self.x_test, self.x_test_folded)
-            self.x_val, self.x_val_folded = self.compute_dt(self.x_val, self.x_val_folded)
-            self.seq_len_train, self.p_train = self.time_series_features(self.x_train, self.p_train)
-            self.seq_len_test, self.p_test = self.time_series_features(self.x_test, self.p_test)
-            self.seq_len_val, self.p_val = self.time_series_features(self.x_val, self.p_val)
-            self.save_processed_data()
+    def __init__(self, args, self_adv=False, oe=False, geotrans=False):
+        #seed_everything(args.seed)
+        self.args = args
+        self.eps = 1e-10
+        if args.fold:
+            self.x_train, self.x_test, self.x_val, self.y_train, self.y_test, self.y_val, self.p_train, self.p_test, self.p_val = read_data(True)
         else:
-            self.load_processed_data()
-            self.compute_seq_len()
+            self.x_train, self.x_test, self.x_val, self.y_train, self.y_test, self.y_val = read_data(False)
 
-        self.define_datasets()
+        self.lab2idx = load_json("../datasets/asas_sn/lab2idx.json")
 
-    def load_data(self):
-        self.x_train = np.load("../datasets/asas_sn/x_train.npy")
-        self.x_train_folded = np.load("../datasets/asas_sn/pf_train.npy")
-        self.y_train = np.load("../datasets/asas_sn/y_train.npy")
-        self.p_train = np.load("../datasets/asas_sn/p_train.npy")
+        # magnitude normalization
+        self.x_train, _, _ = normalize_light_curves(self.x_train, minmax=False)
+        self.x_val, _, _ = normalize_light_curves(self.x_val, minmax=False)
+        self.x_test, _, _ = normalize_light_curves(self.x_test, minmax=False)
 
-        self.x_test = np.load("../datasets/asas_sn/x_test.npy")
-        self.x_test_folded = np.load("../datasets/asas_sn/pf_test.npy")
-        self.y_test = np.load("../datasets/asas_sn/y_test.npy")
-        self.p_test = np.load("../datasets/asas_sn/p_test.npy")
+        # time normalization
+        if not args.fold:
+            self.x_train = time_norm(self.x_train)
+            self.x_test = time_norm(self.x_test)
+            self.x_val = time_norm(self.x_val)
 
-        self.x_val = np.load("../datasets/asas_sn/x_val.npy")
-        self.x_val_folded = np.load("../datasets/asas_sn/pf_val.npy")
-        self.y_val = np.load("../datasets/asas_sn/y_val.npy")
-        self.p_val = np.load("../datasets/asas_sn/p_val.npy")
-        return
+        self.x_train, self.y_train, self.p_train = random_shuffle(self.x_train, self.y_train, self.p_train)
+        self.x_val, self.y_val, self.p_val = random_shuffle(self.x_val, self.y_val, self.p_val)
 
-    def normalize(self, x, x_folded):
-        n = len(x)
-        mask = x[:, :, 2] != 0
-        seq_len = mask.sum(1)
-        m = np.zeros(n)
-        s = np.zeros(n)
-        for i in range(n):
-            m[i] = x[i, :seq_len[i], 1].mean()
-            s[i] = x[i, :seq_len[i], 1].std()
-        x[:, :, 1] = (x[:, :, 1] - m[:, np.newaxis]) / (s[:, np.newaxis] + self.eps) * mask
-        x[:, :, 2] = x[:, :, 2] / (s[:, np.newaxis] + self.eps) * mask
-        x_folded[:, :, 1] = (x_folded[:, :, 1] - m[:, np.newaxis]) / (s[:, np.newaxis] + self.eps) * mask
-        x_folded[:, :, 2] = x_folded[:, :, 2] / (s[:, np.newaxis] + self.eps) * mask
-        return x, x_folded, m, s
+        self.average_precision = (self.y_test == 8).sum() / len(self.y_test)
 
-    def compute_dt(self, x, x_folded):
-        mask = x[:, :, 2] != 0
-        x[:, 1:, 0] = x[:, 1:, 0] - x[:, :-1, 0]
-        x[:, 0, 0] = 0
-        x[:, :, 0] *= mask
+        self.seq_len_train = calculate_seq_len(self.x_train)
+        self.seq_len_val = calculate_seq_len(self.x_val)
+        self.seq_len_test = calculate_seq_len(self.x_test)
 
-        x_folded[:, 1:, 0] = x_folded[:, 1:, 0] - x_folded[:, :-1, 0]
-        x_folded[:, 0, 0] = 0
-        x_folded[:, :, 0] *= mask
-        return x, x_folded
+        self.train_dataset = MyDataset(self.x_train, self.y_train, self.seq_len_train, self.p_train, device="cpu")
+        self.val_dataset = MyDataset(self.x_val, self.y_val, self.seq_len_val, self.p_val, device="cpu")
+        self.test_dataset = MyDataset(self.x_test, self.y_test, self.seq_len_test, self.p_test, device="cpu")
 
-    def time_series_features(self, x, p):
-        seq_len = (x[:, :, 2] != 0).sum(1)
-        return seq_len, np.log10(p)
-
-    def save_processed_data(self):
-        np.save("{}/x_train.npy".format(self.data_path), self.x_train)
-        np.save("{}/x_train_folded.npy".format(self.data_path), self.x_train_folded)
-        np.save("{}/y_train.npy".format(self.data_path), self.y_train)
-        np.save("{}/m_train.npy".format(self.data_path), self.m_train)
-        np.save("{}/s_train.npy".format(self.data_path), self.s_train)
-        np.save("{}/p_train.npy".format(self.data_path), self.p_train)
-        
-        np.save("{}/x_val.npy".format(self.data_path), self.x_val)
-        np.save("{}/x_val_folded.npy".format(self.data_path), self.x_val_folded)
-        np.save("{}/y_val.npy".format(self.data_path), self.y_val)
-        np.save("{}/m_val.npy".format(self.data_path), self.m_val)
-        np.save("{}/s_val.npy".format(self.data_path), self.s_val)
-        np.save("{}/p_val.npy".format(self.data_path), self.p_val)
-
-        np.save("{}/x_test.npy".format(self.data_path), self.x_test)
-        np.save("{}/x_test_folded.npy".format(self.data_path), self.x_test_folded)
-        np.save("{}/y_test.npy".format(self.data_path), self.y_test)
-        np.save("{}/m_test.npy".format(self.data_path), self.m_test)
-        np.save("{}/s_test.npy".format(self.data_path), self.s_test)
-        np.save("{}/p_test.npy".format(self.data_path), self.p_test)
-        return
-
-    def load_processed_data(self):
-        if self.fold:
-            self.x_train = np.load("{}/x_train_folded.npy".format(self.data_path))
-            self.p_train = np.load("{}/p_train.npy".format(self.data_path))
-            self.x_val = np.load("{}/x_val_folded.npy".format(self.data_path))
-            self.p_val = np.load("{}/p_val.npy".format(self.data_path))
-            self.x_test = np.load("{}/x_test_folded.npy".format(self.data_path))
-            self.p_test = np.load("{}/p_test.npy".format(self.data_path))
-        else:
-            self.x_train = np.load("{}/x_train.npy".format(self.data_path))
-            self.x_val = np.load("{}/x_val.npy".format(self.data_path))
-            self.x_test = np.load("{}/x_test.npy".format(self.data_path))
-
-        self.y_train = np.load("{}/y_train.npy".format(self.data_path))
-        self.m_train = np.load("{}/m_train.npy".format(self.data_path))
-        self.s_train = np.load("{}/s_train.npy".format(self.data_path))
-        
-        self.y_val = np.load("{}/y_val.npy".format(self.data_path))
-        self.m_val = np.load("{}/m_val.npy".format(self.data_path))
-        self.s_val = np.load("{}/s_val.npy".format(self.data_path))
-
-        self.y_test = np.load("{}/y_test.npy".format(self.data_path))
-        self.m_test = np.load("{}/m_test.npy".format(self.data_path))
-        self.s_test = np.load("{}/s_test.npy".format(self.data_path))
-        return
-
-    def define_datasets(self):
         # balancing
         labs, counts = np.unique(self.y_train, return_counts=True)
-        mask = labs != -99
-        weights = 1 / counts[mask]
-        weights /= 2 * weights.sum()
-        weights = np.insert(weights, 0, 0.5)
+        # mask = labs != -99
+        # weights = 1 / counts[mask]
+        # weights /= 2 * weights.sum()
+        # weights = np.insert(weights, 0, 0.5)
 
+        weights = 1 / counts
+        weights /= weights.sum()
+        
         sample_weight = np.zeros(len(self.y_train))
         for i, lab in enumerate(labs):
             mask = self.y_train == lab
             sample_weight[mask] = weights[i]
         sampler = torch.utils.data.WeightedRandomSampler(sample_weight, len(sample_weight))
-        
-        if self.fold:            
-            self.train_dataset = MyFoldedDataset(self.x_train, self.y_train, self.m_train, self.s_train, self.p_train, self.seq_len_train, device=self.device)
-            self.val_dataset = MyFoldedDataset(self.x_val, self.y_val, self.m_val, self.s_val, self.p_val, self.seq_len_val, device=self.device)
-        else:
-            self.train_dataset = MyDataset(self.x_train, self.y_train, self.m_train, self.s_train, self.seq_len_train, device=self.device)
-            self.val_dataset = MyDataset(self.x_val, self.y_val, self.m_val, self.s_val, self.seq_len_val, device=self.device)
-        self.train_dataloader = DataLoader(self.train_dataset, batch_size=self.bs, sampler=sampler)
-        self.val_dataloader = DataLoader(self.val_dataset, batch_size=self.bs, shuffle=True)
-        return
-
-    def compute_seq_len(self):
-        self.seq_len_train = (self.x_train[:, :, 2] != 0).sum(axis=1)
-        self.seq_len_val = (self.x_val[:, :, 2] != 0).sum(axis=1)
-        return
-
-
-
-if __name__ == "__main__":
-    # dataset = LightCurveDataset("linear", bs=256, fold=True, eval=False)
-    dataset = ASASSNDataset(bs=256, fold=False, eval=True)
-    plt.errorbar(np.cumsum(dataset.x_train[0, :196, 0]), dataset.x_train[0, :196, 1], dataset.x_train[0, :196, 2], fmt=".")
-    plt.show()
+        self.train_dataloader = DataLoader(self.train_dataset, batch_size=self.args.bs, sampler=sampler)
+        self.val_dataloader = DataLoader(self.val_dataset, batch_size=self.args.bs, shuffle=True)
+        self.test_dataloader = DataLoader(self.test_dataset, batch_size=self.args.bs, shuffle=False)
