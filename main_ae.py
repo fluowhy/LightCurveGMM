@@ -1,6 +1,6 @@
 import argparse
 from tqdm import tqdm
-from torch.utils.tensorboard import SummaryWriter
+#from torch.utils.tensorboard import SummaryWriter
 import pdb
 
 from models import *
@@ -30,10 +30,10 @@ class Model(object):
             self.model = LSTMAE(args.nin, args.nh, args.nl, args.nout, args.nlayers, args.do)        
         self.model.to(args.d)
         print("model params {}".format(count_parameters(self.model)))
-        log_path = "logs/autoencoder"
-        if os.path.exists(log_path) and os.path.isdir(log_path):
-            shutil.rmtree(log_path)
-        self.writer = SummaryWriter(log_path)
+        #log_path = "logs/autoencoder"
+        #if os.path.exists(log_path) and os.path.isdir(log_path):
+        #    shutil.rmtree(log_path)
+        #self.writer = SummaryWriter(log_path)
         nc = 2 if args.dataset == "toy" else 3
         self.wmse = WMSELoss(nc=nc)
         print(nc, self.wmse)                
@@ -83,7 +83,7 @@ class Model(object):
             train_loss = self.train_model(train_loader)
             val_loss = self.eval_model(val_loader)
             loss[epoch] = (train_loss, val_loss)
-            self.writer.add_scalars("total", {"train": train_loss, "val": val_loss}, global_step=epoch)
+            #self.writer.add_scalars("total", {"train": train_loss, "val": val_loss}, global_step=epoch)
             print(template.format(epoch, train_loss, val_loss))
             if val_loss < self.best_loss:
                 self.best_model = self.model.state_dict()
