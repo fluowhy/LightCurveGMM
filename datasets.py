@@ -111,6 +111,7 @@ class ASASSNDataset(object):
             self.x_test = time_norm(self.x_test)
             self.x_val = time_norm(self.x_val)
 
+        pdb.set_trace()
         self.x_train, self.y_train, self.p_train = random_shuffle(self.x_train, self.y_train, self.p_train)
         self.x_val, self.y_val, self.p_val = random_shuffle(self.x_val, self.y_val, self.p_val)
 
