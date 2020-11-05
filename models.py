@@ -4,6 +4,18 @@ import pdb
 from utils import distances, compute_params
 
 
+class MLP(torch.nn.Module):
+    def __init__(self, nin, nh, nout, do=0.5):
+        super(MLP, self).__init__()
+        self.fc1 = torch.nn.Linear(nin, nh)
+        self.fc2 = torch.nn.Linear(nh, nout)
+        self.tanh = torch.nn.Tanh()
+        self.dropout = torch.nn.Dropout(do)
+
+    def forward(self, x):
+        return self.fc2(self.dropout(self.tanh(self.fc1(x))))
+
+
 class LSTMAE(torch.nn.Module):
     def __init__(self, nin, nh, nl, nout, nlayers, do):
         super(LSTMAE, self).__init__()

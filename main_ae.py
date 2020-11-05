@@ -16,6 +16,7 @@ def plot_loss(loss, savename, dpi=200):
     plt.grid()
     plt.ylabel("WMSE")
     plt.xlabel("epoch")
+    plt.legend()
     plt.tight_layout()
     plt.savefig(savename, dpi=dpi)
     return
