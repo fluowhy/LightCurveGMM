@@ -34,7 +34,6 @@ class Model(object):
         ce_loss = 0
         gmm_loss = 0
         for idx, batch in tqdm(enumerate(data_loader)):
-            self.optimizer.zero_grad()
             if self.args.fold:
                 x, y, m, s, p, seq_len = batch
                 x, y, m, s, p, seq_len = x.to(self.args.d), y.to(self.args.d), m.to(self.args.d), s.to(self.args.d), p.to(self.args.d), seq_len.to(self.args.d)
@@ -47,6 +46,7 @@ class Model(object):
             ce = self.ce(logits, y)
             energy = compute_energy(h, phi, mu, cov).mean()
             loss = recon + self.args.alpha * ce + self.args.beta * energy
+            self.optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), clip_value)
             self.optimizer.step()
