@@ -90,7 +90,7 @@ def compute_energy(z, phi=None, mu=None, cov=None, size_average=True):
     cov_inverse = torch.inverse(cov)
     log_det_cov = torch.logdet(cov)
     cte_2 = (0.5 * (log_det_cov + cte)).exp()
-    # cte_2[torch.isnan(cte_2)] = eps
+    cte_2 = torch.nan_to_num(input, nan=eps)
     # N x K
     exp_arg = - 0.5 * torch.sum(torch.sum(z_mu.unsqueeze(-1) * cov_inverse.unsqueeze(0), dim=-2) * z_mu, dim=-1)
     # for stability (logsumexp)
