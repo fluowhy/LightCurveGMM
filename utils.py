@@ -90,7 +90,8 @@ def compute_energy(z, phi=None, mu=None, cov=None, size_average=True):
     cov_inverse = torch.inverse(cov)
     log_det_cov = torch.logdet(cov)
     cte_2 = (0.5 * (log_det_cov + cte)).exp()
-    cte_2 = torch.nan_to_num(input, nan=eps)
+    cte_2 = torch.where(torch.isnan(cte_2), torch.zeros_like(cte_2), cte_2)
+    # cte_2 = torch.nan_to_num(input, nan=eps)  # only for pytorch > 1.8
     # N x K
     exp_arg = - 0.5 * torch.sum(torch.sum(z_mu.unsqueeze(-1) * cov_inverse.unsqueeze(0), dim=-2) * z_mu, dim=-1)
     # for stability (logsumexp)
@@ -100,52 +101,6 @@ def compute_energy(z, phi=None, mu=None, cov=None, size_average=True):
     sample_energy = - max_val.squeeze() - (density * phi.unsqueeze(0)).sum(-1).log()
     if size_average:
         sample_energy = torch.mean(sample_energy)
-    return sample_energy
-
-
-def compute_energy_mine(z, phi=None, mu=None, cov=None, logits=None):
-    # source https://github.com/danieltan07/dagmm/blob/master/model.py
-    if phi is None or mu is None or cov is None:
-        phi, mu, cov = compute_params(z, logits)
-
-    k, D, _ = cov.size()
-
-    z_mu = (z.unsqueeze(1)- mu.unsqueeze(0))
-
-    eps = 1e-12
-    cte = D * np.log(2 * np.pi)
-    eye = (torch.eye(D, device=cov.device) * eps).unsqueeze(0)
-    eye = eye.repeat(k, 1, 1)
-    cov = cov + eye
-    cov_inverse = torch.inverse(cov)
-    det_cov = (0.5 * (cte + torch.logdet(cov)))
-    # if torch.isnan(det_cov.sum()):
-        # det_cov = torch.ones_like(det_cov) * eps
-    # det_cov = 0.5 * torch.logdet(cov)
-    if torch.isnan(det_cov.sum()):
-        mask = det_cov != det_cov
-        det_cov[mask] = det_cov[~ mask].mean()
-
-    # N x K
-    exp_term_tmp = - 0.5 * torch.sum(torch.sum(z_mu.unsqueeze(-1) * cov_inverse.unsqueeze(0), dim=-2) * z_mu, dim=-1)
-    log_norm_prob_dens = exp_term_tmp - det_cov.unsqueeze(0)
-    # for stability (logsumexp)
-    # max_val = torch.max((exp_term_tmp).clamp(min=0), dim=1, keepdim=True)[0]
-    # exp_term = torch.exp(exp_term_tmp - max_val)
-    # max_val, _ = exp_term_tmp.clamp(min=0).max(dim=1, keepdim=True)
-    # exp_term = torch.exp(exp_term_tmp - max_val) / torch.sqrt(det_cov).unsqueeze(0)
-    # pdb.set_trace()
-    exp_term = log_norm_prob_dens.exp()
-
-    arg = torch.sum(phi.unsqueeze(0) * exp_term, dim=1)
-    # sample_energy = - max_val.squeeze() - torch.log(arg + eps)
-    sample_energy = 1 / (arg + eps)
-    sample_energy = sample_energy.clamp(max=1e4)
-    # sample_energy = - torch.log(arg + eps)
-    
-    if torch.isnan(sample_energy.mean()):
-        pdb.set_trace()
-
     return sample_energy
 
 
