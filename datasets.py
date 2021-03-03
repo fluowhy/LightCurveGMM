@@ -3,13 +3,16 @@ import torch
 import pdb
 
 from torch.utils.data import Dataset, DataLoader
-from utils import make_dir, load_json, save_json, MyDataset, calculate_seq_len
+from utils import make_dir, load_json, save_json, MyDataset, MyFoldedDataset, calculate_seq_len
 
 
-def random_shuffle(x, y, p):
+def random_shuffle(x, y, m, s, p=None):
     index = np.arange(len(x))
     np.random.shuffle(index)
-    return x[index], y[index], p[index]
+    if p is not None:
+        return x[index], y[index], m[index], s[index], p[index]
+    else:
+        return x[index], y[index], m[index], s[index]
 
 
 def read_data(fold=False):
@@ -101,9 +104,9 @@ class ASASSNDataset(object):
         self.lab2idx = load_json("../datasets/asas_sn/lab2idx.json")
 
         # magnitude normalization
-        self.x_train, _, _ = normalize_light_curves(self.x_train, minmax=False)
-        self.x_val, _, _ = normalize_light_curves(self.x_val, minmax=False)
-        self.x_test, _, _ = normalize_light_curves(self.x_test, minmax=False)
+        self.x_train, self.m_train, self.s_train = normalize_light_curves(self.x_train, minmax=False)
+        self.x_val, self.m_val, self.s_val = normalize_light_curves(self.x_val, minmax=False)
+        self.x_test, self.m_test, self.s_test = normalize_light_curves(self.x_test, minmax=False)
 
         # time normalization
         if not args.fold:
@@ -111,8 +114,12 @@ class ASASSNDataset(object):
             self.x_test = time_norm(self.x_test)
             self.x_val = time_norm(self.x_val)
 
-        self.x_train, self.y_train, self.p_train = random_shuffle(self.x_train, self.y_train, self.p_train)
-        self.x_val, self.y_val, self.p_val = random_shuffle(self.x_val, self.y_val, self.p_val)
+        if args.fold:
+            self.x_train, self.y_train, self.m_train, self.s_train, self.p_train = random_shuffle(self.x_train, self.y_train, self.m_train, self.s_train, self.p_train)
+            self.x_val, self.y_val, self.m_val, self.s_val, self.p_val = random_shuffle(self.x_val, self.y_val, self.m_val, self.s_val, self.p_val)
+        else:
+            self.x_train, self.y_train, self.m_train, self.s_train = random_shuffle(self.x_train, self.y_train, self.m_train, self.s_train)
+            self.x_val, self.y_val, self.m_val, self.s_val = random_shuffle(self.x_val, self.y_val, self.m_val, self.s_val)
 
         self.average_precision = (self.y_test == 8).sum() / len(self.y_test)
 
@@ -120,25 +127,34 @@ class ASASSNDataset(object):
         self.seq_len_val = calculate_seq_len(self.x_val)
         self.seq_len_test = calculate_seq_len(self.x_test)
 
-        self.train_dataset = MyDataset(self.x_train, self.y_train, self.seq_len_train, self.p_train, device="cpu")
-        self.val_dataset = MyDataset(self.x_val, self.y_val, self.seq_len_val, self.p_val, device="cpu")
-        self.test_dataset = MyDataset(self.x_test, self.y_test, self.seq_len_test, self.p_test, device="cpu")
+        if args.fold:
+            self.train_dataset = MyFoldedDataset(self.x_train, self.y_train, self.m_train, self.s_train, self.p_train, self.seq_len_train, device="cpu")
+            self.val_dataset = MyFoldedDataset(self.x_val, self.y_val, self.m_val, self.s_val, self.p_val, self.seq_len_val, device="cpu")
+            self.test_dataset = MyFoldedDataset(self.x_test, self.y_test, self.m_test, self.s_test, self.p_test, self.seq_len_test, device="cpu")
+        else:
+            self.train_dataset = MyDataset(self.x_train, self.y_train, self.m_train, self.s_train, self.p_train, self.seq_len_train, device="cpu")
+            self.val_dataset = MyDataset(self.x_val, self.y_val, self.m_val, self.s_val, self.p_val, self.seq_len_val, device="cpu")
+            self.test_dataset = MyDataset(self.x_test, self.y_test, self.m_test, self.s_test, self.p_test, self.seq_len_test, device="cpu")
 
-        # balancing
-        labs, counts = np.unique(self.y_train, return_counts=True)
-        # mask = labs != -99
-        # weights = 1 / counts[mask]
-        # weights /= 2 * weights.sum()
-        # weights = np.insert(weights, 0, 0.5)
+        # # balancing
+        # labs, counts = np.unique(self.y_train, return_counts=True)
+        # # mask = labs != -99
+        # # weights = 1 / counts[mask]
+        # # weights /= 2 * weights.sum()
+        # # weights = np.insert(weights, 0, 0.5)
 
-        weights = 1 / counts
-        weights /= weights.sum()
+        # weights = 1 / counts
+        # weights /= weights.sum()
         
-        sample_weight = np.zeros(len(self.y_train))
-        for i, lab in enumerate(labs):
-            mask = self.y_train == lab
-            sample_weight[mask] = weights[i]
-        sampler = torch.utils.data.WeightedRandomSampler(sample_weight, len(sample_weight))
-        self.train_dataloader = DataLoader(self.train_dataset, batch_size=self.args.bs, sampler=sampler)
+        # sample_weight = np.zeros(len(self.y_train))
+        # for i, lab in enumerate(labs):
+        #     mask = self.y_train == lab
+        #     sample_weight[mask] = weights[i]
+        # sampler = torch.utils.data.WeightedRandomSampler(sample_weight, len(sample_weight))
+        # self.train_dataloader = DataLoader(self.train_dataset, batch_size=self.args.bs, sampler=sampler)
+        # self.val_dataloader = DataLoader(self.val_dataset, batch_size=self.args.bs, shuffle=True)
+        # self.test_dataloader = DataLoader(self.test_dataset, batch_size=self.args.bs, shuffle=False)
+
+        self.train_dataloader = DataLoader(self.train_dataset, batch_size=self.args.bs, shuffle=True)
         self.val_dataloader = DataLoader(self.val_dataset, batch_size=self.args.bs, shuffle=True)
         self.test_dataloader = DataLoader(self.test_dataset, batch_size=self.args.bs, shuffle=False)

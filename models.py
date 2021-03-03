@@ -79,6 +79,7 @@ class GRUGMM(torch.nn.Module):
         self.fcd = torch.nn.Linear(nh, nout)
         self.fce = torch.nn.Linear(nh, nl)
         self.do = torch.nn.Dropout(p=do)
+        self.softmax = torch.nn.Softmax(dim=1)
 
     def forward(self, x, m, s, seq_len, p=None):
         n, _, _ = x.shape
@@ -89,9 +90,10 @@ class GRUGMM(torch.nn.Module):
         if p is None:
             zc = torch.cat((z, euc, cos, m.unsqueeze(-1), s.unsqueeze(-1)), dim=1)
         else:
-            zc = torch.cat((z, euc, cos, m.unsqueeze(-1), s.unsqueeze(-1), p.unsqueeze(-1)), dim=1) 
+            zc = torch.cat((z, euc, cos, m, s, p.unsqueeze(-1)), dim=1) 
         logits = self.estimation_network(zc)
-        phi, mu, cov = compute_params(zc, logits)
+        gamma = self.softmax(logits)
+        phi, mu, cov = compute_params(zc, gamma)
         return pred, zc, logits, phi, mu, cov
 
     def encode(self, x):

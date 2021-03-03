@@ -1,10 +1,11 @@
 import argparse
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
+import copy
 
 from models import *
 from utils import *
-from datasets import LightCurveDataset, ASASSNDataset
+from datasets import ASASSNDataset
 
 
 class Model(object):
@@ -91,24 +92,22 @@ class Model(object):
 
     def fit(self, train_loader, val_loader, args):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=args.lr, weight_decay=args.wd, amsgrad=True)
-        loss = np.zeros((args.e, 2, 4))
         for epoch in range(args.e):
             template = "Epoch {} train loss {:.4f} val loss {:.4f}"
             train_loss, train_recon_loss, train_ce_loss, train_gmm_loss = self.train_model(train_loader)
             val_loss, val_recon_loss, val_ce_loss, val_gmm_loss = self.eval_model(val_loader)
-            loss[epoch, 0] = (train_loss, train_recon_loss, train_ce_loss, train_gmm_loss)
-            loss[epoch, 1] = (val_loss, val_recon_loss, val_ce_loss, val_gmm_loss)
             self.writer.add_scalars("total", {"train": train_loss, "val": val_loss}, global_step=epoch)
             self.writer.add_scalars("recon", {"train": train_recon_loss, "val": val_recon_loss}, global_step=epoch)
             self.writer.add_scalars("cross_entropy", {"train": train_ce_loss, "val": val_ce_loss}, global_step=epoch)
+            self.writer.add_scalars("gmm", {"train": train_gmm_loss, "val": val_gmm_loss}, global_step=epoch)
             print(template.format(epoch, train_loss, val_loss))
             if val_loss < self.best_loss:
-                self.best_model = self.model.state_dict()
+                self.best_model = copy.deepcopy(self.model.state_dict())
                 self.best_loss = val_loss
-        model_state_dict = self.model.state_dict()
+        model_state_dict = copy.deepcopy(self.model.state_dict())
         torch.save(self.best_model, "models/{}/fold_{}/{}_best.pth".format(self.args.name, self.args.fold, self.args.arch))
         torch.save(model_state_dict, "models/{}/fold_{}/{}_last.pth".format(self.args.name, self.args.fold, self.args.arch))
-        return loss
+        return
 
 
 if __name__ == "__main__":
@@ -147,7 +146,7 @@ if __name__ == "__main__":
     seed_everything()
 
     if args.name == "asas_sn":
-        dataset = ASASSNDataset(fold=args.fold, bs=args.bs, device=args.d, eval=True)
+        dataset = ASASSNDataset(args, self_adv=False, oe=False, geotrans=False)
     elif args.name == "toy":
         from toy_dataset import ToyDataset
         dataset = ToyDataset(args, val_size=0.1, sl=64)
@@ -157,5 +156,4 @@ if __name__ == "__main__":
     args.ngmm = len(np.unique(dataset.y_train))
 
     aegmm = Model(args)
-    loss = aegmm.fit(dataset.train_dataloader, dataset.val_dataloader, args)
-    plot_loss(loss, "figures/{}/fold_{}/{}_loss.png".format(args.name, args.fold, args.arch), dpi=400)
+    aegmm.fit(dataset.train_dataloader, dataset.val_dataloader, args)

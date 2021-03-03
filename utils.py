@@ -55,6 +55,7 @@ def compute_params(z, gamma):
     N = gamma.size(0)
     # K
     sum_gamma = torch.sum(gamma, dim=0)
+    
 
     # K
     phi = sum_gamma / N
@@ -66,7 +67,7 @@ def compute_params(z, gamma):
     # gamma N x K
 
     # z_mu = N x K x D
-    z_mu = (z.unsqueeze(1)- mu.unsqueeze(0))
+    z_mu = (z.unsqueeze(1) - mu.unsqueeze(0))
 
     # z_mu_outer = N x K x D x D
     z_mu_outer = z_mu.unsqueeze(-1) * z_mu.unsqueeze(-2)
@@ -79,8 +80,7 @@ def compute_params(z, gamma):
 
 def compute_energy(z, phi=None, mu=None, cov=None, size_average=True):
     k, D, _ = cov.size()
-
-    z_mu = (z.unsqueeze(1)- mu.unsqueeze(0))
+    z_mu = z.unsqueeze(1) - mu.unsqueeze(0)
 
     eps = 1e-12
     cte = D * np.log(2 * np.pi)
@@ -88,43 +88,18 @@ def compute_energy(z, phi=None, mu=None, cov=None, size_average=True):
     eye = eye.repeat(k, 1, 1)
     cov = cov + eye
     cov_inverse = torch.inverse(cov)
-    # det_cov = (0.5 * (cte + torch.logdet(cov)))
-    det_cov = torch.det(cov)
-
-    # cov_inverse = []
-    # det_cov = []
-    # cov_diag = 0
-    # eps = 1e-12
-    # for i in range(k):
-    #     # K x D x D
-    #     cov_k = cov[i] + torch.eye(D) * eps
-    #     cov_inverse.append(torch.inverse(cov_k).unsqueeze(0))
-
-    #     #det_cov.append(np.linalg.det(cov_k.data.cpu().numpy()* (2*np.pi)))
-    #     det_cov.append((Cholesky.apply(cov_k.cpu() * (2*np.pi)).diag().prod()).unsqueeze(0))
-    #     cov_diag = cov_diag + torch.sum(1 / cov_k.diag())
-
-    # # K x D x D
-    # cov_inverse = torch.cat(cov_inverse, dim=0)
-    # # K
-    # det_cov = torch.cat(det_cov).cuda()
-    #det_cov = to_var(torch.from_numpy(np.float32(np.array(det_cov))))
-
+    log_det_cov = torch.logdet(cov)
+    cte_2 = (0.5 * (log_det_cov + cte)).exp()
+    # cte_2[torch.isnan(cte_2)] = eps
     # N x K
-    exp_term_tmp = -0.5 * torch.sum(torch.sum(z_mu.unsqueeze(-1) * cov_inverse.unsqueeze(0), dim=-2) * z_mu, dim=-1)
+    exp_arg = - 0.5 * torch.sum(torch.sum(z_mu.unsqueeze(-1) * cov_inverse.unsqueeze(0), dim=-2) * z_mu, dim=-1)
     # for stability (logsumexp)
-    max_val = torch.max((exp_term_tmp).clamp(min=0), dim=1, keepdim=True)[0]
-
-    exp_term = torch.exp(exp_term_tmp - max_val)
-
-    # sample_energy = -max_val.squeeze() - torch.log(torch.sum(phi.unsqueeze(0) * exp_term / (det_cov).unsqueeze(0), dim = 1) + eps)
-    sample_energy = -max_val.squeeze() - torch.log(torch.sum(phi.unsqueeze(0) * exp_term / (torch.sqrt(det_cov)).unsqueeze(0), dim = 1) + eps)
-    # sample_energy = -max_val.squeeze() - torch.log(torch.sum(phi.unsqueeze(0) * exp_term / (torch.sqrt((2*np.pi)**D * det_cov)).unsqueeze(0), dim = 1) + eps)
-
-
+    max_val, _ = exp_arg.max(dim=1, keepdim=True)
+    exp_term = torch.exp(exp_arg - max_val)
+    density = exp_term / cte_2.unsqueeze(0)
+    sample_energy = - max_val.squeeze() - (density * phi.unsqueeze(0)).sum(-1).log()
     if size_average:
         sample_energy = torch.mean(sample_energy)
-
     return sample_energy
 
 
@@ -222,16 +197,34 @@ class WMSELoss(torch.nn.Module):
         return wmse
 
 
-class MyDataset(Dataset):
-    def __init__(self, x, y, z, p, device="cpu"):
+class MyFoldedDataset(Dataset):
+    def __init__(self, x, y, m, s, p, sl, device="cpu"):
         self.n, _, _ = x.shape  # rnn
         self.x = torch.tensor(x, dtype=torch.float, device=device)
         self.y = torch.tensor(y, dtype=torch.long, device=device)
-        self.z = torch.tensor(z, dtype=torch.float, device=device)
+        self.m = torch.tensor(m, dtype=torch.float, device=device)
+        self.s = torch.tensor(s, dtype=torch.float, device=device)
         self.p = torch.tensor(p, dtype=torch.float, device=device)
+        self.sl = torch.tensor(sl, dtype=torch.float, device=device)
 
     def __getitem__(self, index):
-        return self.x[index], self.y[index], self.z[index], self.p[index]
+        return self.x[index], self.y[index], self.m[index], self.s[index], self.p[index], self.sl[index]
+
+    def __len__(self):
+        return self.n
+
+
+class MyDataset(Dataset):
+    def __init__(self, x, y, m, s, sl, device="cpu"):
+        self.n, _, _ = x.shape  # rnn
+        self.x = torch.tensor(x, dtype=torch.float, device=device)
+        self.y = torch.tensor(y, dtype=torch.long, device=device)
+        self.m = torch.tensor(m, dtype=torch.float, device=device)
+        self.s = torch.tensor(s, dtype=torch.float, device=device)
+        self.sl = torch.tensor(sl, dtype=torch.float, device=device)
+
+    def __getitem__(self, index):
+        return self.x[index], self.y[index], self.m[index], self.s[index], self.sl[index]
 
     def __len__(self):
         return self.n
