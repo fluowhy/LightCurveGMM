@@ -37,10 +37,13 @@ def read_data(fold=False):
 
 
 def time_norm(x):
-    tmin = x[:, 0, 0][:, np.newaxis]
-    x[:, :, 0] = x[:, :, 0] - tmin
-    dt = x[:, 1:, 0] - x[:, :-1, 0]
-    x[:, :, 0] = x[:, :, 0] / dt.max()
+    # TODO: fix bug
+    mask = x[:, :, 0] != 0
+    mask[:, 0] = 1.
+    x[:, :, 0] = x[:, :, 0] - x[:, 0, 0][:, np.newaxis]
+    x[:, 1:, 0] = x[:, 1:, 0] - x[:, :-1, 0]
+    x[:, :, 0] = x[:, :, 0] * mask
+    pdb.set_trace()
     return x
 
 
@@ -109,10 +112,9 @@ class ASASSNDataset(object):
         self.x_test, self.m_test, self.s_test = normalize_light_curves(self.x_test, minmax=False)
 
         # time normalization
-        if not args.fold:
-            self.x_train = time_norm(self.x_train)
-            self.x_test = time_norm(self.x_test)
-            self.x_val = time_norm(self.x_val)
+        self.x_train = time_norm(self.x_train)
+        self.x_test = time_norm(self.x_test)
+        self.x_val = time_norm(self.x_val)
 
         if args.fold:
             self.x_train, self.y_train, self.m_train, self.s_train, self.p_train = random_shuffle(self.x_train, self.y_train, self.m_train, self.s_train, self.p_train)

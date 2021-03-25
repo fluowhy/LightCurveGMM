@@ -9,6 +9,38 @@ import matplotlib.pyplot as plt
 import pdb
 
 
+def plot_single_confusion_matrix(cm, labels, title, savename, normalize, ni=None):
+    nc = len(labels)
+    if not ni:
+        ni = nc
+    if normalize:        
+        total = cm.sum(axis=1, keepdims=True)
+        vmax = 1
+        template = "{:.2f}"
+    else:
+        vmax = cm.max()
+        template = "{:.0f}"
+    thr = vmax * 0.5
+    fig, ax = plt.subplots()
+    im = ax.imshow(cm, cmap="YlGn", aspect="equal", vmin=0, vmax=vmax)
+    for i in range(nc):
+        for j in range(ni):
+            if cm[i, j] > thr:
+                color = "white"
+            else:
+                color = "black"
+            text = ax.text(j, i, template.format(cm[i, j]), ha="center", va="center", color=color, fontsize=8)
+    plt.title(title)
+    plt.xticks(np.arange(ni), labels[:ni], rotation=45)
+    plt.yticks(np.arange(nc), labels)
+    plt.xlabel("predicted label")
+    plt.ylabel("true label")
+    fig.colorbar(im)
+    plt.tight_layout()
+    plt.savefig(savename, dpi=200)
+    return
+
+
 def plot_confusion_matrix(cms, labels, title, savename, normalize, ni=None):
     nc = len(labels)
     if not ni:

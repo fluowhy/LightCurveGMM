@@ -11,8 +11,8 @@ import pandas as pd
 import pdb
 import argparse
 
-from utils import seed_everything, plot_confusion_matrix, load_json, compute_energy, compute_params
-from datasets import LightCurveDataset, ASASSNDataset
+from utils import seed_everything, plot_confusion_matrix, plot_single_confusion_matrix, load_json, compute_energy, compute_params
+from datasets import ASASSNDataset
 from models import *
 
 
@@ -113,7 +113,7 @@ print(args)
 seed_everything()
 
 if args.name == "asas_sn":    
-    dataset = ASASSNDataset(fold=args.fold, bs=args.bs, device=args.d, eval=True)
+    dataset = ASASSNDataset(args, self_adv=False, oe=False, geotrans=False)
     lab2idx = load_json("../datasets/asas_sn/lab2idx.json")
     idx2lab = list(lab2idx.keys())
 elif args.name == "toy":
@@ -163,8 +163,8 @@ if args.name == "asas_sn" or args.name == "toy":
     cm = confusion_matrix(target, y_pred)
 
     if args.name == "asas_sn":
-        plot_confusion_matrix(cm, idx2lab[:-1], args.name, "{}/{}_cm_norm.png".format(fig_path, args.arch), normalize=True)
-        plot_confusion_matrix(cm, idx2lab[:-1], "{}, accuracy: {:.4f}".format(args.name, accuracy), "{}/{}_cm.png".format(fig_path, args.arch), normalize=False)
+        plot_single_confusion_matrix(cm, idx2lab[:-1], args.name, "{}/{}_cm_norm.png".format(fig_path, args.arch), normalize=True)
+        plot_single_confusion_matrix(cm, idx2lab[:-1], "{}, accuracy: {:.4f}".format(args.name, accuracy), "{}/{}_cm.png".format(fig_path, args.arch), normalize=False)
     elif args.name == "toy":
         plot_confusion_matrix(cm, idx2lab[:-2], args.name, "{}/{}_cm_norm.png".format(fig_path, args.arch), normalize=True)
         plot_confusion_matrix(cm, idx2lab[:-2], "{}, accuracy: {:.4f}".format(args.name, accuracy), "{}/{}_cm.png".format(fig_path, args.arch), normalize=False)
@@ -182,17 +182,20 @@ else:
     plot_confusion_matrix(cm, idx2lab, args.name, "{}/{}_cm_norm.png".format(fig_path, args.arch), normalize=True)
     plot_confusion_matrix(cm, idx2lab, "{}, accuracy: {:.4f}".format(args.name, accuracy), "{}/{}_cm.png".format(fig_path, args.arch), normalize=False)
 
+softmax = torch.nn.Softmax(dim=1)
+
 if args.name == "asas_sn" or args.name == "toy":
     z_val = torch.tensor(val_features, dtype=torch.float, device=args.d)
     z_test = torch.tensor(test_features, dtype=torch.float, device=args.d)
     logits_val = torch.tensor(val_logits, dtype=torch.float, device=args.d)
     logits_test = torch.tensor(test_logits, dtype=torch.float, device=args.d)
 
-    phi_val, mu_val, cov_val = compute_params(z_val, logits_val)
-    phi_test, mu_test, cov_test = compute_params(z_test, logits_test)
     
-    val_energy = compute_energy(z_val, phi=phi_val, mu=mu_val, cov=cov_val).cpu().numpy()
-    test_energy = compute_energy(z_test, phi=phi_test, mu=mu_test, cov=cov_test).cpu().numpy()
+    phi_val, mu_val, cov_val = compute_params(z_val, softmax(logits_val))
+    phi_test, mu_test, cov_test = compute_params(z_test, softmax(logits_test))
+    
+    val_energy = compute_energy(z_val, phi=phi_val, mu=mu_val, cov=cov_val, size_average=False).cpu().numpy()
+    test_energy = compute_energy(z_test, phi=phi_test, mu=mu_test, cov=cov_test, size_average=False).cpu().numpy()
 
     labels = np.ones(len(y_test))
     if args.name == "asas_sn":
@@ -200,7 +203,7 @@ if args.name == "asas_sn" or args.name == "toy":
     elif args.name == "toy":
         labels[y_test == 3] = 0
         labels[y_test == 4] = 0
-
+    # pdb.set_trace()
     scores_in = test_energy[labels == 1]
     scores_out = test_energy[labels == 0]
     average_precision = (labels == 0).sum() / len(labels)
