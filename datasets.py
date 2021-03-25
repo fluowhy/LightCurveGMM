@@ -42,7 +42,6 @@ def time_norm(x):
     x[:, :, 0] = x[:, :, 0] - x[:, 0, 0][:, np.newaxis]
     x[:, 1:, 0] = x[:, 1:, 0] - x[:, :-1, 0]
     x[:, :, 0] = x[:, :, 0] * mask
-    pdb.set_trace()
     return x
 
 
