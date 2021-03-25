@@ -37,7 +37,6 @@ def read_data(fold=False):
 
 
 def time_norm(x):
-    # TODO: fix bug
     mask = x[:, :, 0] != 0
     mask[:, 0] = 1.
     x[:, :, 0] = x[:, :, 0] - x[:, 0, 0][:, np.newaxis]

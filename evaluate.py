@@ -189,7 +189,6 @@ if args.name == "asas_sn" or args.name == "toy":
     z_test = torch.tensor(test_features, dtype=torch.float, device=args.d)
     logits_val = torch.tensor(val_logits, dtype=torch.float, device=args.d)
     logits_test = torch.tensor(test_logits, dtype=torch.float, device=args.d)
-
     
     phi_val, mu_val, cov_val = compute_params(z_val, softmax(logits_val))
     phi_test, mu_test, cov_test = compute_params(z_test, softmax(logits_test))
