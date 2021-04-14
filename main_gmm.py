@@ -1,6 +1,6 @@
 import argparse
 from tqdm import tqdm
-#from torch.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 import pdb
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import precision_recall_curve, auc, roc_curve, confusion_matrix
@@ -33,10 +33,10 @@ class Model(object):
         self.model = MLP(args.nin, args.nh, args.nout, args.do)
         self.model.to(args.d)
         print("model params {}".format(count_parameters(self.model)))
-        #log_path = "logs/autoencoder"
-        #if os.path.exists(log_path) and os.path.isdir(log_path):
-        #    shutil.rmtree(log_path)
-        #self.writer = SummaryWriter(log_path)
+        log_path = "logs/gmm"
+        if os.path.exists(log_path) and os.path.isdir(log_path):
+           shutil.rmtree(log_path)
+        self.writer = SummaryWriter(log_path)
         nc = 2 if args.dataset == "toy" else 3
         self.best_loss = np.inf
         self.softmax = torch.nn.Softmax(dim=1)
