@@ -7,7 +7,7 @@ beta: 0.001
 # batch size
 bs: 2048
 # training device
-d: cuda:2
+d: cuda:1
 dataset: ztf
 # dropout
 do: 0.5
