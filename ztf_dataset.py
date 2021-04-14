@@ -82,7 +82,7 @@ class ZTFDataset(object):
         self.y_val = np.array([self.temp_labels_dict[lab] for lab in self.y_val])
         self.n_inlier_classes = len(np.unique(self.y_train))
         self.ndim = self.x_train.shape[2]
-
+        
         self.train_dataset = MyDataset(self.x_train, self.y_train, self.mean_train, self.std_train, self.seq_len_train, device=args["d"])
         self.val_dataset = MyDataset(self.x_val, self.y_val, self.mean_val, self.std_val, self.seq_len_val, device=args["d"])
         self.test_dataset = MyDataset(self.x_test, self.y_test, self.mean_test, self.std_test, self.seq_len_test, device=args["d"])        
