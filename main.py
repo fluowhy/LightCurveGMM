@@ -46,7 +46,7 @@ class Model(object):
             ce = self.ce(logits, y)
             energy = compute_energy(h, phi, mu, cov).mean()
             loss = recon + self.alpha * ce + self.beta * energy
-            print("train loss", loss, recon_loss, ce_loss, gmm_loss)
+            print("xpred 0 loss", x_pred[0], h[0], logits[0])
             self.optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), clip_value)
@@ -81,7 +81,7 @@ class Model(object):
                 ce = self.ce(logits, y)
                 energy = compute_energy(h, phi, mu, cov).mean()
                 loss = recon + self.alpha * ce + self.beta * energy
-                print("eval loss", loss, recon_loss, ce_loss, gmm_loss)
+                print("xpred 0 loss", x_pred[0], h[0], logits[0])
                 eval_loss += loss.detach()
                 recon_loss += recon.detach()
                 ce_loss += ce.detach()
