@@ -5,7 +5,7 @@ arch: gru
 # gmm energy weight
 beta: 0.001
 # batch size
-bs: 1024
+bs: 512
 # training device
 d: cuda:2
 dataset: ztf
