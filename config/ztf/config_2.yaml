@@ -3,7 +3,7 @@ alpha: 1.
 # recurrent architecture
 arch: gru
 # gmm energy weight
-beta: 0.0
+beta: 0.001
 # batch size
 bs: 1024
 # training device

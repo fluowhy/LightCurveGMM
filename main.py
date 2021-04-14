@@ -43,10 +43,9 @@ class Model(object):
                 p = None
             x_pred, h, logits, phi, mu, cov = self.model(x, m, s, seq_len.long(), p)
             recon = self.wmse(x, x_pred, seq_len).mean()
-            print(y.unique(), logits.shape)
             ce = self.ce(logits, y)
             energy = compute_energy(h, phi, mu, cov).mean()
-            loss = recon + self.alpha * ce# + self.beta * energy
+            loss = recon + self.alpha * ce + self.beta * energy
             self.optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), clip_value)
