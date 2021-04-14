@@ -21,7 +21,7 @@ ne: 16
 # recurrent network size
 nh: 96
 # latent space size
-nl: 8
+nl: 4
 # number of recurrent layers
 nlayers: 2
 # output size
