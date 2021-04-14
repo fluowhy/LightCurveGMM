@@ -43,6 +43,7 @@ class Model(object):
                 p = None
             x_pred, h, logits, phi, mu, cov = self.model(x, m, s, seq_len.long(), p)
             recon = self.wmse(x, x_pred, seq_len).mean()
+            print(y.unique(), logits.shape)
             ce = self.ce(logits, y)
             energy = compute_energy(h, phi, mu, cov).mean()
             loss = recon + self.alpha * ce# + self.beta * energy
