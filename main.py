@@ -2,7 +2,6 @@ import argparse
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 import copy
-from functools import partial
 from utils import pad_seq
 
 from models import *
@@ -148,36 +147,18 @@ if __name__ == "__main__":
 
         self_adv = False
         
+        dataset = ZTFDataset(config_args, self_adv=self_adv, cv_oc=[config_args["outlier_fam"]])
         family = load_json("../datasets/ztf/family.json")
         lab2idx = load_json("../datasets/ztf/lab2idx.json")        
         outlier_class = [lab2idx[key] for key in lab2idx if family[key] == config_args["outlier_fam"]]
         inlier_class = [lab2idx[key] for key in lab2idx if family[key] != config_args["outlier_fam"]]
         print("inlier", inlier_class)
         print("outlier", outlier_class)
-
-        val_dataset = ZTFDataset(config_args, "val", self_adv=self_adv, cv_oc=[config_args["outlier_fam"]])
-        val_dataloader = DataLoader(val_dataset, batch_size=config_args["bs"], shuffle=True, collate_fn=partial(pad_seq, device=config_args["d"]))
-
-        test_dataset = ZTFDataset(config_args, "test", self_adv=self_adv, cv_oc=[config_args["outlier_fam"]])
-        test_dataloader = DataLoader(test_dataset, batch_size=config_args["bs"], shuffle=False, collate_fn=partial(pad_seq, device=config_args["d"]))
-
-        train_dataset = ZTFDataset(config_args, "train", self_adv=self_adv, cv_oc=[config_args["outlier_fam"]])
-
-        # balancing
-        y_train = train_dataset[:][1]
-        labs, counts = np.unique(np.unique(y_train), return_counts=True)
-        weights = 1 / counts
-        weights /= weights.sum()
-        sample_weight = np.zeros(len(y_train))
-        for i, lab in enumerate(labs):
-            mask = y_train == lab
-            sample_weight[mask] = weights[i]
-        sampler = torch.utils.data.WeightedRandomSampler(sample_weight, len(sample_weight))
-        
-        train_dataloader = DataLoader(train_dataset, batch_size=config_args["bs"], sampler=sampler, collate_fn=partial(pad_seq, device=config_args["d"]))
-    config_args["nin"] = train_dataset.ndim
-    config_args["ngmm"] = train_dataset.n_inlier_classes
+        maha = False
+    
+    config_args["nin"] = dataset.ndim
+    config_args["ngmm"] = dataset.n_inlier_classes
     print(config_args)
 
     aegmm = Model(config_args)
-    aegmm.fit(train_dataloader, val_dataloader, config_args)
+    aegmm.fit(dataset.train_dataloader, dataset.val_dataloader, config_args)
