@@ -187,12 +187,12 @@ class WMSELoss(torch.nn.Module):
 
     def wmse_3c(self, x, x_pred, seq_len):
         mask = (x[:, :, 2] != 0) * 1.
-        wmse = (((x_pred - x[:, :, 1]) / (x[:, :, 2] + self.eps)).pow(2) * mask).sum(dim=- 1) / seq_len
+        wmse = (((x_pred - x[:, :, 1]) / (x[:, :, 2] + self.eps)).pow(2) * mask).sum(dim=1) / seq_len
         return wmse
 
     def wmse_2c(self, x, x_pred, seq_len):
         mask = (x[:, :, 0] != 0) * 1.
-        wmse = ((x_pred - x[:, :, 1]).pow(2) * mask).sum(dim=- 1) / seq_len
+        wmse = ((x_pred - x[:, :, 1]).pow(2) * mask).sum(dim=1) / seq_len
         return wmse
 
     def forward(self, x, x_pred, seq_len):
