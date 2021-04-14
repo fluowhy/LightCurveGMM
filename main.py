@@ -26,7 +26,7 @@ class Model(object):
         nc = 3
         self.wmse = WMSELoss(nc=nc)
         print(nc, self.wmse)                
-        self.ce = torch.nn.CrossEntropyLoss()
+        self.ce = torch.nn.CrossEntropyLoss(reduction="mean")
         self.best_loss = np.inf
 
     def train_model(self, data_loader, clip_value=1.):
