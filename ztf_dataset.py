@@ -48,9 +48,9 @@ class ZTFDataset(object):
         self.x_test, self.mean_test, self.std_test = normalize_light_curves(self.x_test, minmax=False)
 
         # time normalization
-        self.x_train = time_norm(self.x_train, dt=True)
-        self.x_test = time_norm(self.x_test, dt=True)
-        self.x_val = time_norm(self.x_val, dt=True)
+        self.x_train = time_norm(self.x_train, log=True)
+        self.x_test = time_norm(self.x_test, log=True)
+        self.x_val = time_norm(self.x_val, log=True)
         
         self.average_precision = 0
         if cv_oc:
