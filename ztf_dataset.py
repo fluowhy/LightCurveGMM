@@ -102,7 +102,7 @@ class ZTFDataset(object):
             mask = self.y_train == lab
             sample_weight[mask] = weights[i]
         sampler = torch.utils.data.WeightedRandomSampler(sample_weight, len(sample_weight))
-        self.train_dataloader = DataLoader(self.train_dataset, batch_size=self.args["bs"], shuffle=True, drop_last=True)#, sampler=sampler)
+        self.train_dataloader = DataLoader(self.train_dataset, batch_size=self.args["bs"], sampler=sampler, drop_last=True)
         self.val_dataloader = DataLoader(self.val_dataset, batch_size=self.args["bs"], shuffle=True, drop_last=True)
         self.test_dataloader = DataLoader(self.test_dataset, batch_size=self.args["bs"], shuffle=False)
 
