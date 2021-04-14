@@ -71,10 +71,8 @@ class Model(object):
             for idx, batch in tqdm(enumerate(data_loader)):
                 if self.args["fold"]:
                     x, y, m, s, p, seq_len = batch
-                    x, y, m, s, p, seq_len = x.to(self.args.d), y.to(self.args.d), m.to(self.args.d), s.to(self.args.d), p.to(self.args.d), seq_len.to(self.args.d)
                 else:
                     x, y, m, s, seq_len = batch
-                    x, y, m, s, seq_len = x.to(self.args.d), y.to(self.args.d), m.to(self.args.d), s.to(self.args.d), seq_len.to(self.args.d)
                     p = None
                 # x = x.to(self.args.d)
                 # seq_len = seq_len.to(self.args.d)
