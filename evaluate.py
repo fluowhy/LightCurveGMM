@@ -191,10 +191,10 @@ if args.name == "asas_sn" or args.name == "toy":
     logits_test = torch.tensor(test_logits, dtype=torch.float, device=args.d)
     
     phi_val, mu_val, cov_val = compute_params(z_val, softmax(logits_val))
-    phi_test, mu_test, cov_test = compute_params(z_test, softmax(logits_test))
+    # phi_test, mu_test, cov_test = compute_params(z_test, softmax(logits_test))
     
     val_energy = compute_energy(z_val, phi=phi_val, mu=mu_val, cov=cov_val, size_average=False).cpu().numpy()
-    test_energy = compute_energy(z_test, phi=phi_test, mu=mu_test, cov=cov_test, size_average=False).cpu().numpy()
+    test_energy = compute_energy(z_test, phi=phi_val, mu=mu_val, cov=cov_val, size_average=False).cpu().numpy()
 
     labels = np.ones(len(y_test))
     if args.name == "asas_sn":
