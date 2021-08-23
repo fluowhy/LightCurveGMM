@@ -31,7 +31,7 @@ nout: 1
 # outlier family (ztf)
 outlier_fam: periodic
 # early stopping patience
-patience: 30
+patience: 1000
 # number of repetitions
 rep: 5
 # weight decay weight
