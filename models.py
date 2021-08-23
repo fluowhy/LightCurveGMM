@@ -70,7 +70,7 @@ class GRUGMM(torch.nn.Module):
             self.dec = torch.nn.GRU(input_size=nl + 1, hidden_size=nh, num_layers=nlayers, batch_first=True)
 
         self.estimation_network = torch.nn.Sequential(
-            torch.nn.Linear(nl + 5, ne) if fold else torch.nn.Linear(nl + 4, ne),
+            torch.nn.Linear(nl + 5, ne) if fold else torch.nn.Linear(nl + 2, ne),
             torch.nn.Tanh(),
             torch.nn.Dropout(p=do),
             torch.nn.Linear(ne, ngmm)
@@ -81,14 +81,14 @@ class GRUGMM(torch.nn.Module):
         self.do = torch.nn.Dropout(p=do)
         self.softmax = torch.nn.Softmax(dim=1)
 
-    def forward(self, x, m, s, seq_len, p=None):
+    def forward(self, x, seq_len, p=None):
         n, _, _ = x.shape
         z = self.encode(x)
         z = z[torch.arange(n), (seq_len - 1).type(dtype=torch.long)]
         pred = self.decode(x[:, :, 0], z)  # index: 0-time, 1-flux, 2-flux_err
         euc, cos = distances(x, pred)
         if p is None:
-            zc = torch.cat((z, euc, cos, m, s), dim=1)
+            zc = torch.cat((z, euc, cos), dim=1)
         else:
             zc = torch.cat((z, euc, cos, m, s, p.unsqueeze(-1)), dim=1) 
         logits = self.estimation_network(zc)

@@ -24,24 +24,20 @@ def read_data(fold=False):
         p_test = np.load("../datasets/asas_sn/p_test.npy")
         p_val = np.load("../datasets/asas_sn/p_val.npy")
     else:
-        x_train = np.load("../datasets/asas_sn/x_train.npy")
-        x_test = np.load("../datasets/asas_sn/x_test.npy")
-        x_val = np.load("../datasets/asas_sn/x_val.npy")
+        data = np.load("../datasets/asas_sn/train_data.npz", allow_pickle=True)
     y_train = np.load("../datasets/asas_sn/y_train.npy")
     y_test = np.load("../datasets/asas_sn/y_test.npy")
     y_val = np.load("../datasets/asas_sn/y_val.npy")
     if fold:
         return x_train, x_test, x_val, y_train, y_test, y_val, p_train, p_test, p_val
     else:
-        return x_train, x_test, x_val, y_train, y_test, y_val
+        return data["x_train"], data["x_test"], data["x_val"], y_train, y_test, y_val
 
 
 def time_norm(x):
-    mask = x[:, :, 0] != 0
-    mask[:, 0] = 1.
-    x[:, :, 0] = x[:, :, 0] - x[:, 0, 0][:, np.newaxis]
-    x[:, 1:, 0] = x[:, 1:, 0] - x[:, :-1, 0]
-    x[:, :, 0] = x[:, :, 0] * mask
+    for i in range(len(x)):
+        x[i, 1:, 0] = x[i, 1:, 0] - x[i, :-1, 0]
+        x[i, 0, 0] = 0.    
     return x
 
 
@@ -64,31 +60,27 @@ def change_label(y_train, y_test, outlier_class):
 
 
 def normalize_light_curves(x, eps=1e-10, minmax=False):
-    seq_len = (x[:, :, 2] != 0).sum(axis=-1)
-    means = np.zeros(len(x)) 
-    stds = np.zeros(len(x))
+    means = list()
+    stds = list()
     for i in range(len(x)):
-        xi = x[i, :seq_len[i], 1]
-        mean = xi.mean()
-        std = xi.std()
+        mean = x[i, :, 1].mean()
+        std = x[i, :, 1].std()
         if minmax:
             y1 = 1
             y0 = -1
-            xmin = xi.min()
-            xmax = xi.max()
+            xmin = x[i, :, 1].min()
+            xmax = x[i, :, 1].max()
             delta_y = y1 - y0
             delta_x = xmax - xmin
-            x[i, :seq_len[i], 1] = delta_y / delta_x * (x[i, :seq_len[i], 1] - xmin) + y0
+            x[i, :, 1] = delta_y / delta_x * (x[i, :, 1] - xmin) + y0
             if x.shape[2] == 3:
-                x[i, :seq_len[i], 2] = delta_y / delta_x * x[i, :seq_len[i], 2]
+                x[i, :, 2] = delta_y / delta_x * x[i, :, 2]
         else:
-            x[i, :seq_len[i], 1] = (x[i, :seq_len[i], 1] - mean) / (std + eps)
-            if x.shape[2] == 3:
-                x[i, :seq_len[i], 2] = x[i, :seq_len[i], 2] / (std + eps)
-        means[i] = mean
-        stds[i] = std
-    means = means[:, np.newaxis]
-    stds = stds[:, np.newaxis]
+            x[i, :, 1] = (x[i, :, 1] - mean) / (std + eps)
+            if x[i].shape[-1] == 3:
+                x[i, :, 2] = x[i, :, 2] / (std + eps)
+        means.append(mean)
+        stds.append(std)
     return x, means, stds
 
 
@@ -97,10 +89,13 @@ class ASASSNDataset(object):
         #seed_everything(args.seed)
         self.args = args
         self.eps = 1e-10
-        if args.fold:
+        if self.args["fold"]:
             self.x_train, self.x_test, self.x_val, self.y_train, self.y_test, self.y_val, self.p_train, self.p_test, self.p_val = read_data(True)
         else:
             self.x_train, self.x_test, self.x_val, self.y_train, self.y_test, self.y_val = read_data(False)
+        
+        self.ndim = self.x_train[0].shape[-1]
+        self.n_inlier_classes = len(np.unique(self.y_train))
 
         self.lab2idx = load_json("../datasets/asas_sn/lab2idx.json")
 
@@ -114,27 +109,20 @@ class ASASSNDataset(object):
         self.x_test = time_norm(self.x_test)
         self.x_val = time_norm(self.x_val)
 
-        if args.fold:
-            self.x_train, self.y_train, self.m_train, self.s_train, self.p_train = random_shuffle(self.x_train, self.y_train, self.m_train, self.s_train, self.p_train)
-            self.x_val, self.y_val, self.m_val, self.s_val, self.p_val = random_shuffle(self.x_val, self.y_val, self.m_val, self.s_val, self.p_val)
-        else:
-            self.x_train, self.y_train, self.m_train, self.s_train = random_shuffle(self.x_train, self.y_train, self.m_train, self.s_train)
-            self.x_val, self.y_val, self.m_val, self.s_val = random_shuffle(self.x_val, self.y_val, self.m_val, self.s_val)
-
         self.average_precision = (self.y_test == 8).sum() / len(self.y_test)
 
         self.seq_len_train = calculate_seq_len(self.x_train)
         self.seq_len_val = calculate_seq_len(self.x_val)
         self.seq_len_test = calculate_seq_len(self.x_test)
 
-        if args.fold:
+        if self.args["fold"]:
             self.train_dataset = MyFoldedDataset(self.x_train, self.y_train, self.m_train, self.s_train, self.p_train, self.seq_len_train, device="cpu")
             self.val_dataset = MyFoldedDataset(self.x_val, self.y_val, self.m_val, self.s_val, self.p_val, self.seq_len_val, device="cpu")
             self.test_dataset = MyFoldedDataset(self.x_test, self.y_test, self.m_test, self.s_test, self.p_test, self.seq_len_test, device="cpu")
         else:
-            self.train_dataset = MyDataset(self.x_train, self.y_train, self.m_train, self.s_train, self.p_train, self.seq_len_train, device="cpu")
-            self.val_dataset = MyDataset(self.x_val, self.y_val, self.m_val, self.s_val, self.p_val, self.seq_len_val, device="cpu")
-            self.test_dataset = MyDataset(self.x_test, self.y_test, self.m_test, self.s_test, self.p_test, self.seq_len_test, device="cpu")
+            self.train_dataset = MyDataset(self.x_train, self.y_train, self.seq_len_train, device="cpu")
+            self.val_dataset = MyDataset(self.x_val, self.y_val, self.seq_len_val, device="cpu")
+            self.test_dataset = MyDataset(self.x_test, self.y_test, self.seq_len_test, device="cpu")
 
         # # balancing
         # labs, counts = np.unique(self.y_train, return_counts=True)
@@ -155,6 +143,13 @@ class ASASSNDataset(object):
         # self.val_dataloader = DataLoader(self.val_dataset, batch_size=self.args.bs, shuffle=True)
         # self.test_dataloader = DataLoader(self.test_dataset, batch_size=self.args.bs, shuffle=False)
 
-        self.train_dataloader = DataLoader(self.train_dataset, batch_size=self.args.bs, shuffle=True)
-        self.val_dataloader = DataLoader(self.val_dataset, batch_size=self.args.bs, shuffle=True)
-        self.test_dataloader = DataLoader(self.test_dataset, batch_size=self.args.bs, shuffle=False)
+        self.train_dataloader = DataLoader(self.train_dataset, batch_size=self.args["bs"], shuffle=True, collate_fn=pad_sequence_with_lengths)
+        self.val_dataloader = DataLoader(self.val_dataset, batch_size=self.args["bs"], shuffle=True, collate_fn=pad_sequence_with_lengths)
+        self.test_dataloader = DataLoader(self.test_dataset, batch_size=self.args["bs"], shuffle=False, collate_fn=pad_sequence_with_lengths)
+
+
+def pad_sequence_with_lengths(data):
+    x = torch.nn.utils.rnn.pad_sequence([d[0] for d in data], padding_value=0., batch_first=True)
+    y = torch.tensor([d[1] for d in data], dtype=torch.long)
+    seq_len = torch.tensor([d[2] for d in data], dtype=torch.float)
+    return x, y, seq_len

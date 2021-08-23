@@ -4,15 +4,17 @@ alpha: 1.
 arch: gru
 # gmm energy weight
 beta: 0.1
+# singularity weight
+gamma: 0.005
 # batch size
 bs: 1024
 # training device
 d: cuda:0
-dataset: ztf
+dataset: asas_sn
 # dropout
 do: 0.5
 # epochs
-e: 5
+e: 2
 fold: false
 # learning rate
 lr: 0.0002
@@ -27,7 +29,7 @@ nlayers: 2
 # output size
 nout: 1
 # outlier family (ztf)
-outlier_fam: stochastic
+outlier_fam: periodic
 # early stopping patience
 patience: 30
 # number of repetitions

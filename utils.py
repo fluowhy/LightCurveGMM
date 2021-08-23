@@ -218,16 +218,14 @@ class MyFoldedDataset(Dataset):
 
 
 class MyDataset(Dataset):
-    def __init__(self, x, y, m, s, sl, device="cpu"):
-        self.n, _, _ = x.shape  # rnn
+    def __init__(self, x, y, sl, device="cpu"):
+        self.n, _, _ = x.shape
         self.x = torch.tensor(x, dtype=torch.float, device=device)
         self.y = torch.tensor(y, dtype=torch.long, device=device)
-        self.m = torch.tensor(m, dtype=torch.float, device=device)
-        self.s = torch.tensor(s, dtype=torch.float, device=device)
         self.sl = torch.tensor(sl, dtype=torch.float, device=device)
 
     def __getitem__(self, index):
-        return self.x[index], self.y[index], self.m[index], self.s[index], self.sl[index]
+        return self.x[index], self.y[index], self.sl[index]
 
     def __len__(self):
         return self.n
