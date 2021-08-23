@@ -3,7 +3,6 @@ from torch.utils.data import Dataset, DataLoader
 import random
 import os
 import numpy as np
-import shutil
 import json
 import matplotlib.pyplot as plt
 import yaml

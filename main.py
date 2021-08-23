@@ -97,7 +97,7 @@ class Model(object):
             ce = self.ce(logits, y)
             energy = compute_energy(h, phi, mu, cov).mean()
             sw = singularity_weight(cov)
-            loss = recon + self.alpha * ce + self.beta * energy + self.gamma * sw
+            loss = recon + self.alpha * ce + self.beta * energy  # + self.gamma * sw
             self.optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), clip_value)
@@ -138,7 +138,7 @@ class Model(object):
                 ce = self.ce(logits, y)
                 energy = compute_energy(h, phi, mu, cov).mean()
                 sw = singularity_weight(cov)
-                loss = recon + self.alpha * ce + self.beta * energy + self.gamma * sw
+                loss = recon + self.alpha * ce + self.beta * energy  # + self.gamma * sw
                 eval_loss += loss.item()
                 recon_loss += recon.item()
                 ce_loss += ce.item()

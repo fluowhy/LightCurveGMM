@@ -3,11 +3,11 @@ alpha: 1.
 # recurrent architecture
 arch: gru
 # gmm energy weight
-beta: 0.1
+beta: 0.001
 # singularity weight
 gamma: 0.005
 # batch size
-bs: 512
+bs: 1024
 # training device
 d: cuda:0
 dataset: asas_sn
