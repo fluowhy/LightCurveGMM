@@ -7,7 +7,7 @@ beta: 0.1
 # singularity weight
 gamma: 0.005
 # batch size
-bs: 1024
+bs: 512
 # training device
 d: cuda:0
 dataset: asas_sn
