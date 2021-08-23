@@ -1,8 +1,7 @@
 import argparse
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
-import copy
-from utils import pad_seq
+import shutil
 
 from models import *
 from utils import *
