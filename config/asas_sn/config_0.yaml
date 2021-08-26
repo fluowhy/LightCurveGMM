@@ -2,10 +2,10 @@
 alpha: 1.
 # recurrent architecture
 arch: gru
-# gmm energy weight
-beta: 0.001
-# singularity weight
-gamma: 0.005
+# gmm energy weight 0.001
+beta: 0.00001
+# singularity weight 0.005
+gamma: 0.000001
 # batch size
 bs: 1024
 # training device

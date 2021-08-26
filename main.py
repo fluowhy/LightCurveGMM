@@ -96,7 +96,7 @@ class Model(object):
             ce = self.ce(logits, y)
             energy = compute_energy(h, phi, mu, cov).mean()
             sw = singularity_weight(cov)
-            loss = recon + self.alpha * ce + self.beta * energy  # + self.gamma * sw
+            loss = recon + self.alpha * ce + self.beta * energy + self.gamma * sw
             self.optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), clip_value)
@@ -130,14 +130,12 @@ class Model(object):
                     y = y.to(self.device)
                     seq_len = seq_len.to(self.device)
                     p = None
-                # x = x.to(self.args.d)
-                # seq_len = seq_len.to(self.args.d)
                 x_pred, h, logits, phi, mu, cov = self.model(x, seq_len.long(), p)
                 recon = self.wmse(x, x_pred, seq_len).mean()
                 ce = self.ce(logits, y)
                 energy = compute_energy(h, phi, mu, cov).mean()
                 sw = singularity_weight(cov)
-                loss = recon + self.alpha * ce + self.beta * energy  # + self.gamma * sw
+                loss = recon + self.alpha * ce + self.beta * energy + self.gamma * sw
                 eval_loss += loss.item()
                 recon_loss += recon.item()
                 ce_loss += ce.item()
