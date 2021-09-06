@@ -1,10 +1,27 @@
 import argparse
 from tqdm import tqdm
-from torch.utils.tensorboard import SummaryWriter
 import shutil
+import numpy as np
+import matplotlib.pyplot as plt
+import os
 
-from models import *
-from utils import *
+import torch
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+
+from models import GRUGMM
+
+from datasets import pad_sequence_with_lengths
+from datasets import read_and_normalize_data
+
+from utils import count_parameters
+from utils import compute_energy
+from utils import WMSELoss
+from utils import make_dir
+from utils import load_json
+from utils import MyDataset
+from utils import seed_everything
+from utils import load_yaml
 
 
 def singularity_weight(cov):
@@ -204,23 +221,26 @@ if __name__ == "__main__":
 
         dataset = ASASSNDataset(config_args, self_adv=False, oe=False, geotrans=False)
     elif args.dataset == "ztf":
-        from ztf_dataset import ZTFDataset
+        print(args.dataset)
+        x_train, x_val, x_test, y_train, y_val, y_test, _, lab2idx, idx2lab, lab2newlab, newlab2lab = read_and_normalize_data("../datasets/ztf/train_data_band_1.npz")
+        outlier_label = load_json("../datasets/ztf/outlier_class.json")
+        oc = [int(lab2idx[lab]) for lab in lab2idx if outlier_label[lab] == "outlier"]
+        labs, counts = np.unique(y_train, return_counts=True)
 
+        train_dataset = MyDataset(x_train, y_train, device=config_args["d"])
+        val_dataset = MyDataset(x_val, y_val, device=config_args["d"])
+        test_dataset = MyDataset(x_test, y_test, device=config_args["d"])
 
-        self_adv = False       
-        dataset = ZTFDataset(config_args, self_adv=self_adv, cv_oc=[config_args["outlier_fam"]])
-        family = load_json("../datasets/ztf/family.json")
-        lab2idx = load_json("../datasets/ztf/lab2idx.json")        
-        outlier_class = [lab2idx[key] for key in lab2idx if family[key] == config_args["outlier_fam"]]
-        inlier_class = [lab2idx[key] for key in lab2idx if family[key] != config_args["outlier_fam"]]
-        print("inlier", inlier_class)
-        print("outlier", outlier_class)
-        maha = False
+        train_dataloader = DataLoader(train_dataset, batch_size=config_args["bs"], shuffle=True, collate_fn=pad_sequence_with_lengths)
+        val_dataloader = DataLoader(val_dataset, batch_size=config_args["bs"], shuffle=False, collate_fn=pad_sequence_with_lengths)
     
-    config_args["nin"] = dataset.ndim
-    config_args["ngmm"] = dataset.n_inlier_classes
+    config_args["nin"] = train_dataset.ndim
+    config_args["ngmm"] = train_dataset.n_inlier_classes
     print(config_args)
 
     aegmm = Model(config_args)
-    train_loss, val_loss = aegmm.fit(dataset.train_dataloader, dataset.val_dataloader, config_args)
+    if args.dataset == "asas_sn":
+        train_loss, val_loss = aegmm.fit(dataset.train_dataloader, dataset.val_dataloader, config_args)
+    elif args.dataset == "ztf":
+        train_loss, val_loss = aegmm.fit(train_dataloader, val_dataloader, config_args)
     plot_loss(train_loss, val_loss, "figures/{}/loss.png".format(args.dataset))

@@ -1,9 +1,51 @@
 import numpy as np
 import torch
-import pdb
 
-from torch.utils.data import Dataset, DataLoader
-from utils import make_dir, load_json, save_json, MyDataset, MyFoldedDataset, calculate_seq_len
+from torch.utils.data import DataLoader
+from utils import load_json
+from utils import MyDataset
+from utils import MyFoldedDataset
+from utils import calculate_seq_len
+
+
+def pad_sequence_with_lengths(data):
+    x = torch.nn.utils.rnn.pad_sequence([d[0] for d in data], padding_value=0., batch_first=True)
+    y = torch.tensor([d[1] for d in data], dtype=torch.long)
+    seq_len = torch.tensor([d[2] for d in data], dtype=torch.float)
+    return x, y, seq_len
+
+
+def read_and_normalize_data(data_path):
+    # data
+    lab2fam = load_json("../datasets/ztf/family.json")
+    lab2idx = load_json("../datasets/ztf/lab2idx.json")
+    idx2lab = load_json("../datasets/ztf/idx2lab.json")
+
+    x = np.load(data_path, allow_pickle=True)
+    x_train = x["x_train"]
+    x_val = x["x_val"]
+    y_train = x["y_train"]
+    y_val = x["y_val"]
+    x_train, _, _ = normalize_light_curves_w_list(x_train)
+    x_val, _, _ = normalize_light_curves_w_list(x_val)
+    x_train = time_norm_w_list(x_train)
+    x_val = time_norm_w_list(x_val)
+    x_test = x["x_test"]
+    y_test = x["y_test"]
+    x_test, _, _ = normalize_light_curves_w_list(x_test)
+    x_test = time_norm_w_list(x_test)
+    labels = np.unique(y_train)
+    lab2newlab = {lab: idx for idx, lab in enumerate(labels)}
+    for lab in np.unique(y_test):
+        try:
+            lab2newlab[lab]
+        except KeyError:
+            lab2newlab[lab] = len(lab2newlab)
+    newlab2lab = [lab for lab in lab2newlab]
+    y_train = [lab2newlab[lab] for lab in y_train]
+    y_val = [lab2newlab[lab] for lab in y_val]
+    y_test = [lab2newlab[lab] for lab in y_test]
+    return x_train, x_val, x_test, y_train, y_val, y_test, lab2fam, lab2idx, idx2lab, lab2newlab, newlab2lab
 
 
 def random_shuffle(x, y, m, s, p=None):
@@ -38,6 +80,13 @@ def time_norm(x):
     for i in range(len(x)):
         x[i, 1:, 0] = x[i, 1:, 0] - x[i, :-1, 0]
         x[i, 0, 0] = 0.    
+    return x
+
+
+def time_norm_w_list(x):
+    for i in range(len(x)):
+        x[i][1:, 0] = x[i][1:, 0] - x[i][:-1, 0]
+        x[i][0, 0] = 0.    
     return x
 
 
@@ -79,6 +128,31 @@ def normalize_light_curves(x, eps=1e-10, minmax=False):
             x[i, :, 1] = (x[i, :, 1] - mean) / (std + eps)
             if x[i].shape[-1] == 3:
                 x[i, :, 2] = x[i, :, 2] / (std + eps)
+        means.append(mean)
+        stds.append(std)
+    return x, means, stds
+
+
+def normalize_light_curves_w_list(x, eps=1e-10, minmax=False):
+    means = list()
+    stds = list()
+    for i in range(len(x)):
+        mean = x[i][:, 1].mean()
+        std = x[i][:, 1].std()
+        if minmax:
+            y1 = 1
+            y0 = -1
+            xmin = x[i, :, 1].min()
+            xmax = x[i, :, 1].max()
+            delta_y = y1 - y0
+            delta_x = xmax - xmin
+            x[i, :, 1] = delta_y / delta_x * (x[i, :, 1] - xmin) + y0
+            if x.shape[2] == 3:
+                x[i, :, 2] = delta_y / delta_x * x[i, :, 2]
+        else:
+            x[i][:, 1] = (x[i][:, 1] - mean) / (std + eps)
+            if x[i].shape[-1] == 3:
+                x[i][:, 2] = x[i][:, 2] / (std + eps)
         means.append(mean)
         stds.append(std)
     return x, means, stds

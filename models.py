@@ -1,7 +1,42 @@
 import torch
-import pdb
 
-from utils import distances, compute_params
+
+def compute_params(z, gamma):
+    # source https://github.com/danieltan07/dagmm/blob/master/model.py
+    N = gamma.size(0)
+    # K
+    sum_gamma = torch.sum(gamma, dim=0)
+    
+
+    # K
+    phi = sum_gamma / N
+
+    # K x D
+    mu = torch.sum(gamma.unsqueeze(-1) * z.unsqueeze(1), dim=0) / sum_gamma.unsqueeze(-1)
+    # z = N x D
+    # mu = K x D
+    # gamma N x K
+
+    # z_mu = N x K x D
+    z_mu = (z.unsqueeze(1) - mu.unsqueeze(0))
+
+    # z_mu_outer = N x K x D x D
+    z_mu_outer = z_mu.unsqueeze(-1) * z_mu.unsqueeze(-2)
+
+    # K x D x D
+    cov = torch.sum(gamma.unsqueeze(-1).unsqueeze(-1) * z_mu_outer, dim = 0) / sum_gamma.unsqueeze(-1).unsqueeze(-1)
+
+    return phi, mu, cov
+
+
+def distances(x, x_pred):
+    mask = (x[:, :, 0] != 0) * 1.
+    x = x[:, :, 1]
+    x_norm = (x.pow(2) * mask).sum(1, keepdim=True)
+    x_pred_norm = (x_pred.pow(2) * mask).sum(1, keepdim=True)
+    euclidean_distance = ((x_pred - x).pow(2) * mask).sum(dim=1, keepdim=True) / x_norm
+    cosine_distance = (x * x_pred * mask).sum(1, keepdim=True) / x_norm / x_pred_norm
+    return euclidean_distance, cosine_distance
 
 
 class MLP(torch.nn.Module):
