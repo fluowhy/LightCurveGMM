@@ -14,7 +14,7 @@ dataset: ztf
 # dropout
 do: 0.5
 # epochs
-e: 2
+e: 2000
 fold: false
 # learning rate
 lr: 0.0002
