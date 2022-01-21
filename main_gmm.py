@@ -46,6 +46,8 @@ class Model(object):
         gamma = self.softmax(logits)
         phi, mu, cov = compute_params(z, gamma)
         sample_energy = compute_energy(z, phi=phi, mu=mu, cov=cov, size_average=True)
+        import pdb
+        pdb.set_trace()
         return sample_energy
 
     def train_model(self, data_loader):

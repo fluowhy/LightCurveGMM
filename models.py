@@ -3,30 +3,41 @@ import torch
 
 def compute_params(z, gamma):
     # source https://github.com/danieltan07/dagmm/blob/master/model.py
-    N = gamma.size(0)
+    _, k = gamma.shape
     # K
-    sum_gamma = torch.sum(gamma, dim=0)
-    
-
-    # K
-    phi = sum_gamma / N
-
+    phi = gamma.mean(dim=0)
+    mu = list()
+    cov = list()
+    for i in range(k):
+        zi = z * gamma[:, i].unsqueeze(-1)
+        mu.append(zi.mean(0))
+        cov.append(torch.diag(torch.std(zi, axis=0)))
     # K x D
-    mu = torch.sum(gamma.unsqueeze(-1) * z.unsqueeze(1), dim=0) / sum_gamma.unsqueeze(-1)
-    # z = N x D
-    # mu = K x D
-    # gamma N x K
-
-    # z_mu = N x K x D
-    z_mu = (z.unsqueeze(1) - mu.unsqueeze(0))
-
-    # z_mu_outer = N x K x D x D
-    z_mu_outer = z_mu.unsqueeze(-1) * z_mu.unsqueeze(-2)
-
+    mu = torch.stack(mu)
     # K x D x D
-    cov = torch.sum(gamma.unsqueeze(-1).unsqueeze(-1) * z_mu_outer, dim = 0) / sum_gamma.unsqueeze(-1).unsqueeze(-1)
-
+    cov = torch.stack(cov)
     return phi, mu, cov
+
+
+# def compute_params(z, gamma):
+#     # source https://github.com/danieltan07/dagmm/blob/master/model.py
+#     N = gamma.size(0)
+#     # K
+#     sum_gamma = torch.sum(gamma, dim=0)
+#     # K
+#     phi = sum_gamma / N
+#     # K x D
+#     mu = torch.sum(gamma.unsqueeze(-1) * z.unsqueeze(1), dim=0) / sum_gamma.unsqueeze(-1)
+#     # z = N x D
+#     # mu = K x D
+#     # gamma N x K
+#     # z_mu = N x K x D
+#     z_mu = (z.unsqueeze(1) - mu.unsqueeze(0))
+#     # z_mu_outer = N x K x D x D
+#     z_mu_outer = z_mu.unsqueeze(-1) * z_mu.unsqueeze(-2)
+#     # K x D x D
+#     cov = torch.sum(gamma.unsqueeze(-1).unsqueeze(-1) * z_mu_outer, dim = 0) / sum_gamma.unsqueeze(-1).unsqueeze(-1)
+#     return phi, mu, cov
 
 
 def distances(x, x_pred):

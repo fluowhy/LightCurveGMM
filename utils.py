@@ -6,34 +6,156 @@ import numpy as np
 import json
 import matplotlib.pyplot as plt
 import yaml
+from sklearn.metrics import precision_recall_curve
+from sklearn.metrics import roc_curve
+from sklearn.metrics import auc
+import pandas as pd
 
 
-def compute_params(z, gamma):
-    # source https://github.com/danieltan07/dagmm/blob/master/model.py
-    N = gamma.size(0)
-    # K
-    sum_gamma = torch.sum(gamma, dim=0)
-    
+def pad_sequence_with_lengths(data):
+    x = torch.nn.utils.rnn.pad_sequence([d[0] for d in data], padding_value=0., batch_first=True)
+    y = torch.tensor([d[1] for d in data], dtype=torch.long)
+    seq_len = torch.tensor([d[2] for d in data], dtype=torch.long)
+    return x, y, seq_len
 
-    # K
-    phi = sum_gamma / N
 
-    # K x D
-    mu = torch.sum(gamma.unsqueeze(-1) * z.unsqueeze(1), dim=0) / sum_gamma.unsqueeze(-1)
-    # z = N x D
-    # mu = K x D
-    # gamma N x K
+def get_datasets(x_train, x_val, x_test, y_train, y_val, y_test, device):
+    return MyDataset(x_train, y_train, device), MyDataset(x_val, y_val, device), MyDataset(x_test, y_test, device)
 
-    # z_mu = N x K x D
-    z_mu = (z.unsqueeze(1) - mu.unsqueeze(0))
 
-    # z_mu_outer = N x K x D x D
-    z_mu_outer = z_mu.unsqueeze(-1) * z_mu.unsqueeze(-2)
+def get_data_loaders(dataset, batch_size, device, oc=None):
+    if dataset == "asas_sn":
+        pass
+    elif "ztf" in dataset:
+        x_train, x_val, x_test, y_train, y_val, y_test = get_ztf_data(dataset)
+    elif dataset == "asas":
+        x_train, x_val, x_test, y_train, y_val, y_test = get_asas_data(oc)
+    elif dataset == "linear":
+        x_train, x_val, x_test, y_train, y_val, y_test = get_linear_data(oc)
+    trainset, valset, testset = get_datasets(x_train, x_val, x_test, y_train, y_val, y_test, device)
+    trainloader = DataLoader(trainset, batch_size=int(batch_size), shuffle=True, collate_fn=pad_sequence_with_lengths)
+    valloader = DataLoader(valset, batch_size=int(batch_size), shuffle=True, collate_fn=pad_sequence_with_lengths)
+    testloader = DataLoader(testset, batch_size=int(batch_size), shuffle=False, collate_fn=pad_sequence_with_lengths)
+    return trainloader, valloader, testloader
 
-    # K x D x D
-    cov = torch.sum(gamma.unsqueeze(-1).unsqueeze(-1) * z_mu_outer, dim = 0) / sum_gamma.unsqueeze(-1).unsqueeze(-1)
 
-    return phi, mu, cov
+def get_linear_data(oc):
+    df = pd.read_csv("../datasets/linear/metadata_split_1.csv")
+    data = np.load("../datasets/linear/light_curves_pf.npz", allow_pickle=True)["light_curves"]
+
+    mask = df["split"] == "train"
+    x_train = [dat for dat, ma in zip(data, mask) if ma]
+    y_train = df["target"][mask].values
+
+    mask = df["split"] == "val"
+    x_val = [dat for dat, ma in zip(data, mask) if ma]
+    y_val = df["target"][mask].values
+
+    mask = df["split"] == "test"
+    x_test = [dat for dat, ma in zip(data, mask) if ma]
+    y_test = df["target"][mask].values
+    normalize_mag(x_train)
+    normalize_mag(x_test)
+    normalize_mag(x_val)
+    return x_train, x_val, x_test, y_train, y_val, y_test
+
+
+def get_asas_data(oc):
+    df = pd.read_csv("../datasets/asas/metadata_split_1.csv")
+    data = np.load("../datasets/asas/light_curves_pf_pro1.npz", allow_pickle=True)["light_curves"]
+    normalize_mag(data)
+
+    # data splitting
+    mask = df["split"] == "train"
+    x_train = [dat for dat, ma in zip(data, mask) if ma]
+    y_train = df["target"][mask].values
+    mask = df["split"] == "val"
+    x_val = [dat for dat, ma in zip(data, mask) if ma]
+    y_val = df["target"][mask].values
+    mask = df["split"] == "test"
+    x_test = [dat for dat, ma in zip(data, mask) if ma]
+    y_test = df["target"][mask].values
+
+    # od data removal
+    mask = y_train != oc
+    x_train = [dat for dat, ma in zip(data, mask) if ma]
+    y_train = y_train[mask]
+    mask = y_val != oc
+    x_val = [dat for dat, ma in zip(data, mask) if ma]
+    y_val = y_val[mask]
+    return x_train, x_val, x_test, y_train, y_val, y_test
+
+
+def normalize_mag(x):
+    for xi in x:
+        m, s = xi[:, 1].mean(), xi[:, 1].std()
+        xi[:, 1] = (xi[:, 1] - m) / s
+        xi[:, 2] = xi[:, 2] / s
+    return
+
+
+def remove_time_offset(x):
+    for xi in x:
+        xi[:, 0] = xi[:, 0] -  xi[:, 0].min()
+    return
+
+
+def get_ztf_data(dataset_name):
+    family = dataset_name.split('_')[1]
+    data = np.load("../datasets/ztf/cl/{}/light_curves.npz".format(family), allow_pickle=True)["light_curves"]
+    df = pd.read_csv("../datasets/ztf/cl/{}/metadata_pro1.csv".format(family))
+    remove_time_offset(data)
+    normalize_mag(data)
+    mask = df["split2"] == "train"
+    x_train = [dat for dat, ma in zip(data, mask) if ma]
+    y_train = df["label"][mask].values
+    mask = df["split2"] == "val"
+    x_val = [dat for dat, ma in zip(data, mask) if ma]
+    y_val = df["label"][mask].values
+    mask = df["split2"] == "test"
+    x_test = [dat for dat, ma in zip(data, mask) if ma]
+    y_test = df["label"][mask].values
+    return x_train, x_val, x_test, y_train, y_val, y_test
+
+
+def od_metrics(scores, y, split=False, n_splits=None):
+    aucpr = list()
+    aucroc = list()
+    scores_in = scores[y == 1]
+    scores_out = scores[y == 0]
+    if split:
+        _, counts = np.unique(y, return_counts=True)
+        if counts[0] < counts[1]:
+            new_y = np.concatenate((np.ones(counts[0]), np.zeros(counts[0])))            
+            for i in range(n_splits):
+                new_scores = np.random.choice(scores_in, counts[0], replace=False)
+                cat_scores = np.concatenate((new_scores, scores_out))
+                precision, recall, _ = precision_recall_curve(new_y, cat_scores, pos_label=0)
+                fpr, tpr, _ = roc_curve(new_y, cat_scores, pos_label=0)
+                aucpr.append(auc(recall, precision))
+                aucroc.append(auc(fpr, tpr))
+        else:
+            new_y = np.concatenate((np.ones(counts[1]), np.zeros(counts[1])))
+            for i in range(n_splits):
+                new_scores = np.random.choice(scores_out, counts[1], replace=False)
+                cat_scores = np.concatenate((scores_in, new_scores))
+                precision, recall, _ = precision_recall_curve(new_y, cat_scores, pos_label=0)
+                fpr, tpr, _ = roc_curve(new_y, cat_scores, pos_label=0)
+                aucpr.append(auc(recall, precision))
+                aucroc.append(auc(fpr, tpr))
+        return aucpr, None, None, aucroc, None, None
+    else:
+        precision, recall, _ = precision_recall_curve(y, scores, pos_label=0)
+        fpr, tpr, _ = roc_curve(y, scores, pos_label=0)
+        aucpr = auc(recall, precision)
+        aucroc = auc(fpr, tpr)
+        return aucpr, precision, recall, aucroc, fpr, tpr
+
+
+def save_yaml(data, savename):
+    with open(savename, 'w') as outfile:
+        yaml.dump(data, outfile, default_flow_style=False)
+    return
 
 
 def load_yaml(filename):
@@ -210,15 +332,13 @@ class MyDataset(Dataset):
     def __init__(self, x, y, device="cpu"):
         self.n = len(x)
         _, self.ndim = x[0].shape
-        self.x = x
-        self.y = y
         self.sl = [len(xi) for xi in x]
-        self.n_inlier_classes = len(np.unique(y))
+        self.x = [torch.tensor(xi, dtype=torch.float, device=device) for xi in x]
+        self.y = y
         self.device = device
 
     def __getitem__(self, index):
-        x = torch.tensor(self.x[index], dtype=torch.float, device=self.device)
-        return x, self.y[index], self.sl[index]
+        return self.x[index], self.y[index], self.sl[index]
 
     def __len__(self):
         return self.n

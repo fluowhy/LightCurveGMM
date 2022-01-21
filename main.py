@@ -6,22 +6,27 @@ import matplotlib.pyplot as plt
 import os
 
 import torch
-from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.data import DataLoader
+# from torch.utils.tensorboard import SummaryWriter
 
 from models import GRUGMM
 
-from datasets import pad_sequence_with_lengths
-from datasets import read_and_normalize_data
+# from datasets import pad_sequence_with_lengths
+# from datasets import read_and_normalize_data
 
 from utils import count_parameters
 from utils import compute_energy
 from utils import WMSELoss
 from utils import make_dir
 from utils import load_json
-from utils import MyDataset
+# from utils import MyDataset
 from utils import seed_everything
 from utils import load_yaml
+from utils import get_data_loaders
+from utils import od_metrics
+from utils import save_yaml
+
+from models import compute_params
 
 
 def singularity_weight(cov):
@@ -70,12 +75,14 @@ def plot_loss(train_loss, val_loss, savename):
 
 
 class Model(object):
-    def __init__(self, args):
+    def __init__(self, args, oc, model_dir):
         self.args = args
         self.alpha = args["alpha"]
         self.beta = args["beta"]
         self.gamma = args["gamma"]
         self.device = args["d"]
+        self.oc = oc
+        self.model_dir = model_dir
         if args["arch"] == "gru":
             self.model = GRUGMM(args["nin"], args["nh"], args["nl"], args["ne"], args["ngmm"], args["nout"], args["nlayers"], args["do"], args["fold"])
         elif args["arch"] == "lstm":
@@ -85,7 +92,7 @@ class Model(object):
         log_path = "logs/{}/{}".format(args["dataset"], args["config"])
         if os.path.exists(log_path) and os.path.isdir(log_path):
             shutil.rmtree(log_path)
-        self.writer = SummaryWriter(log_path)
+        # self.writer = SummaryWriter(log_path)
         nc = 3
         self.wmse = WMSELoss(nc=nc)
         print(nc, self.wmse)                
@@ -175,28 +182,60 @@ class Model(object):
             template = "Epoch {} train loss {:.4f} val loss {:.4f}"
             train_loss, train_recon_loss, train_ce_loss, train_gmm_loss, train_sw = self.train_model(train_loader)
             val_loss, val_recon_loss, val_ce_loss, val_gmm_loss, val_sw = self.eval_model(val_loader)
-            self.writer.add_scalars("total", {"train": train_loss, "val": val_loss}, global_step=epoch)
-            self.writer.add_scalars("recon", {"train": train_recon_loss, "val": val_recon_loss}, global_step=epoch)
-            self.writer.add_scalars("cross_entropy", {"train": train_ce_loss, "val": val_ce_loss}, global_step=epoch)
-            self.writer.add_scalars("gmm", {"train": train_gmm_loss, "val": val_gmm_loss}, global_step=epoch)
+            # self.writer.add_scalars("total", {"train": train_loss, "val": val_loss}, global_step=epoch)
+            # self.writer.add_scalars("recon", {"train": train_recon_loss, "val": val_recon_loss}, global_step=epoch)
+            # self.writer.add_scalars("cross_entropy", {"train": train_ce_loss, "val": val_ce_loss}, global_step=epoch)
+            # self.writer.add_scalars("gmm", {"train": train_gmm_loss, "val": val_gmm_loss}, global_step=epoch)
             train_losses.append((train_loss, train_recon_loss, train_ce_loss, train_gmm_loss, train_sw))
             val_losses.append((val_loss, val_recon_loss, val_ce_loss, val_gmm_loss, val_sw))
             print(template.format(epoch, train_loss, val_loss))
             if val_loss < self.best_loss:
                 self.best_loss = val_loss
-                torch.save(self.model.state_dict(), "models/{}/config_{}/best_model.pth".format(self.args["dataset"], self.args["config"]))
+                torch.save(self.model.state_dict(), f"{self.model_dir}/best_model.pth")
                 counter = 0       
             if counter == self.args["patience"]:
                 break
-        torch.save(self.model.state_dict(), "models/{}/config_{}/last_model.pth".format(self.args["dataset"], self.args["config"]))
+        torch.save(self.model.state_dict(), f"{self.model_dir}/last_model.pth")
         return train_losses, val_losses
+    
+    def load_model(self):
+        self.model.load_state_dict(torch.load(f"{self.model_dir}/best_model.pth", map_location=self.device))
+        return
+    
+    def compute_features(self, x, is_dataloader=False):
+        self.model.eval()
+        with torch.no_grad():
+            if is_dataloader:
+                features = list()
+                targets = list()
+                logits = list()
+                for idx, batch in tqdm(enumerate(x)):
+                    x, y, seq_len = batch
+                    _, h, logit, _, _, _ = self.model(x, seq_len.long(), p=None)
+                    targets.append(y)
+                    features.append(h)
+                    logits.append(logit)
+                features = torch.vstack(features)
+                targets = torch.hstack(targets)
+                logits = torch.vstack(logits)
+        return features, targets, logits
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="autoencoder")
-    parser.add_argument('--dataset', type=str, choices=["ztf", "asas_sn"], default="ztf", help="dataset (default ztf)")
+    parser.add_argument('--e', type=int, default=2, help="epochs (default 2)")
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="linear",
+        choices=["asas", "linear", "macho", "asas_sn", "ztf_transient", "ztf_stochastic", "ztf_periodic"],
+        help="dataset name (default linear)"
+    )
     parser.add_argument('--config', type=int, default=0, help="config number (default 0)")
+    parser.add_argument('--device', type=str, default="cpu", help="device (default cpu)")
+    parser.add_argument('--oc', type=int, default=0, help="outlier class (default 0)")
     args = parser.parse_args()
+    print(args)
 
     make_dir("figures")
     make_dir("models")
@@ -206,41 +245,72 @@ if __name__ == "__main__":
     make_dir("models/{}".format(args.dataset))
     make_dir("files/{}".format(args.dataset))
 
-    make_dir("figures/{}/config_{}".format(args.dataset, args.config))
-    make_dir("models/{}/config_{}".format(args.dataset, args.config))
-    make_dir("files/{}/config_{}".format(args.dataset, args.config))
+    models_dir = f"models/od/{args.dataset}/config_{args.config}/oc_{args.oc}"
+    figures_dir = f"figures/od/{args.dataset}/config_{args.config}/oc_{args.oc}"
+    files_dir = f"files/od/{args.dataset}/config_{args.config}/oc_{args.oc}"
+
+    make_dir(figures_dir)
+    make_dir(files_dir)
+    make_dir(models_dir)
 
     seed_everything()
 
-    config_args = load_yaml("config/{}/config_{}.yaml".format(args.dataset, args.config))
+    config_args = load_yaml(f"config/config_{args.config}.yaml")
     config_args["config"] = args.config
+    config_args["e"] = args.e
 
     if args.dataset == "asas_sn":
-        from datasets import ASASSNDataset
-
-
-        dataset = ASASSNDataset(config_args, self_adv=False, oe=False, geotrans=False)
-    elif args.dataset == "ztf":
-        print(args.dataset)
-        x_train, x_val, x_test, y_train, y_val, y_test, _, lab2idx, idx2lab, lab2newlab, newlab2lab = read_and_normalize_data("../datasets/ztf/train_data_band_1.npz")
-        outlier_label = load_json("../datasets/ztf/outlier_class.json")
-        oc = [int(lab2idx[lab]) for lab in lab2idx if outlier_label[lab] == "outlier"]
-        labs, counts = np.unique(y_train, return_counts=True)
-
-        train_dataset = MyDataset(x_train, y_train, device=config_args["d"])
-        val_dataset = MyDataset(x_val, y_val, device=config_args["d"])
-        test_dataset = MyDataset(x_test, y_test, device=config_args["d"])
-
-        train_dataloader = DataLoader(train_dataset, batch_size=config_args["bs"], shuffle=True, collate_fn=pad_sequence_with_lengths)
-        val_dataloader = DataLoader(val_dataset, batch_size=config_args["bs"], shuffle=False, collate_fn=pad_sequence_with_lengths)
+        trainloader, valloader, testloader = get_data_loaders(args.dataset, config_args["bs"], config_args["d"])
+        outlier_class = [8]
+    elif "ztf" in args.dataset:
+        trainloader, valloader, testloader = get_data_loaders(args.dataset, config_args["bs"], config_args["d"])
+        outlier_labels = load_json("../datasets/ztf/cl/transient/lab2out.json")
+        outlier_labels = [key for key in outlier_labels if outlier_labels[key] == "outlier"]
+        lab2idx = load_json("../datasets/ztf/cl/transient/lab2idx.json")
+        outlier_class = [int(lab2idx[lab]) for lab in outlier_labels]
+    elif args.dataset == "asas":
+        outlier_class = [args.oc]
+        trainloader, valloader, testloader = get_data_loaders(args.dataset, config_args["bs"], config_args["d"], args.oc)
+    elif args.dataset == "linear":
+        outlier_class = [args.oc]
+        trainloader, valloader, testloader = get_data_loaders(args.dataset, config_args["bs"], config_args["d"], args.oc)
     
-    config_args["nin"] = train_dataset.ndim
-    config_args["ngmm"] = train_dataset.n_inlier_classes
+    config_args["nin"] = trainloader.dataset.x[0].shape[1]
+    config_args["ngmm"] = len(np.unique(testloader.dataset.y))
     print(config_args)
 
-    aegmm = Model(config_args)
-    if args.dataset == "asas_sn":
-        train_loss, val_loss = aegmm.fit(dataset.train_dataloader, dataset.val_dataloader, config_args)
-    elif args.dataset == "ztf":
-        train_loss, val_loss = aegmm.fit(train_dataloader, val_dataloader, config_args)
+    aegmm = Model(config_args, outlier_class, models_dir)
+    train_loss, val_loss = aegmm.fit(trainloader, valloader, config_args)
     plot_loss(train_loss, val_loss, "figures/{}/loss.png".format(args.dataset))
+    aegmm.load_model()
+
+    # evaluation
+    softmax = torch.nn.Softmax(dim=1)
+
+    feat_train, y_train, logits_train = aegmm.compute_features(trainloader, is_dataloader=True)
+    feat_val, y_val, logits_val = aegmm.compute_features(valloader, is_dataloader=True)
+    feat_test, y_test, logits_test = aegmm.compute_features(testloader, is_dataloader=True)
+
+    phi_val, mu_val, cov_val = compute_params(feat_val, softmax(logits_val))
+    val_energy = compute_energy(feat_val, phi=phi_val, mu=mu_val, cov=cov_val, size_average=False).cpu().numpy()
+    test_energy = compute_energy(feat_test, phi=phi_val, mu=mu_val, cov=cov_val, size_average=False).cpu().numpy()
+
+    y_target = np.ones(len(y_test))
+
+    for oc in outlier_class:
+        y_target[y_test == oc] = 0
+    
+    aucpr, _, _, aucroc, _, _ = od_metrics(test_energy, y_target, split=True, n_splits=100)
+
+    data = dict(
+        aucpr=float(np.mean(aucpr)),
+        aucpr_std=float(np.std(aucpr)),
+        aucroc=float(np.mean(aucroc)),
+        aucroc_std=float(np.std(aucroc)),
+        val_acc=float(((logits_val.argmax(1).cpu() == y_val).sum() / len(y_val)).item()),
+        dataset=args.dataset,
+        oc=args.oc,
+        config=args.config
+    )
+
+    save_yaml(data, f"{files_dir}/metrics.yaml")
