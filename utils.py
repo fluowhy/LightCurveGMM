@@ -12,6 +12,47 @@ from sklearn.metrics import auc
 import pandas as pd
 
 
+def plot_loss(train_loss, val_loss, savename):
+    fs = 5
+    train_loss = np.array(train_loss)
+    val_loss = np.array(val_loss)
+    fig, ax = plt.subplots(5, figsize=(1.618 * fs * 2, fs * 5))
+
+    axi = ax[0]
+    axi.plot(train_loss[:, 0], label="train")
+    axi.plot(val_loss[:, 0], label="val")
+    axi.legend()
+    axi.set_title("total")
+
+    axi = ax[1]
+    axi.plot(train_loss[:, 1], label="train")
+    axi.plot(val_loss[:, 1], label="val")
+    axi.legend()
+    axi.set_title("reconstruction")
+
+    axi = ax[2]
+    axi.plot(train_loss[:, 2], label="train")
+    axi.plot(val_loss[:, 2], label="val")
+    axi.legend()
+    axi.set_title("cross entropy")
+
+    axi = ax[3]
+    axi.plot(train_loss[:, 3], label="train")
+    axi.plot(val_loss[:, 3], label="val")
+    axi.legend()
+    axi.set_title("gmm")
+
+    axi = ax[4]
+    axi.plot(train_loss[:, 4], label="train")
+    axi.plot(val_loss[:, 4], label="val")
+    axi.legend()
+    axi.set_title("singularity")
+    
+    plt.tight_layout()
+    plt.savefig(savename, dpi=400)
+    return
+
+
 def pad_sequence_with_lengths(data):
     x = torch.nn.utils.rnn.pad_sequence([d[0] for d in data], padding_value=0., batch_first=True)
     y = torch.tensor([d[1] for d in data], dtype=torch.long)
