@@ -12,6 +12,27 @@ from sklearn.metrics import auc
 import pandas as pd
 
 
+def get_asas_sn_data():
+    df = pd.read_csv("../datasets/asas_sn/metadata_2.csv")
+    data = np.load("../datasets/asas_sn/light_curves_2_pf.npz", allow_pickle=True)["light_curves"]
+
+    mask = df["split"] == "train"
+    x_train = [dat for dat, ma in zip(data, mask) if ma]
+    y_train = df["target"][mask].values
+
+    mask = df["split"] == "val"
+    x_val = [dat for dat, ma in zip(data, mask) if ma]
+    y_val = df["target"][mask].values
+
+    mask = df["split"] == "test"
+    x_test = [dat for dat, ma in zip(data, mask) if ma]
+    y_test = df["target"][mask].values
+    normalize_mag(x_train)
+    normalize_mag(x_test)
+    normalize_mag(x_val)
+    return x_train, x_val, x_test, y_train, y_val, y_test
+
+
 def plot_loss(train_loss, val_loss, savename):
     fs = 5
     train_loss = np.array(train_loss)
@@ -66,7 +87,7 @@ def get_datasets(x_train, x_val, x_test, y_train, y_val, y_test, device):
 
 def get_data_loaders(dataset, batch_size, device, oc=None):
     if dataset == "asas_sn":
-        pass
+        x_train, x_val, x_test, y_train, y_val, y_test = get_asas_sn_data()
     elif "ztf" in dataset:
         x_train, x_val, x_test, y_train, y_val, y_test = get_ztf_data(dataset)
     elif dataset == "asas":
